@@ -89,7 +89,8 @@ def train():
     cifar10 = cifar10_utils.get_cifar10('cifar10/cifar-10-batches-py',
                                         validation_size=cv_size)
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.SGD(model.parameters(), lr=FLAGS.learning_rate)
+    optimizer = optim.SGD(model.parameters(), lr=FLAGS.learning_rate,
+                          momentum=0.9, weight_decay=0.003)
 
     log = defaultdict(list)
 
@@ -97,7 +98,7 @@ def train():
         optimizer.zero_grad()
 
         x, y = cifar10['train'].next_batch(FLAGS.batch_size)
-        x = torch.from_numpy(x.reshape(-1, 32 ** 2 * 3))
+        x = torch.from_numpy(x.reshape(FLAGS.batch_size, -1))
         y = torch.from_numpy(y)
 
         h = model.forward(x)

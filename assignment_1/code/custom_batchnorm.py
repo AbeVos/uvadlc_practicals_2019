@@ -34,11 +34,14 @@ class CustomBatchNormAutograd(nn.Module):
     """
     super(CustomBatchNormAutograd, self).__init__()
 
-    ########################
+    #######################
     # PUT YOUR CODE HERE  #
     #######################
-    raise NotImplementedError
-    ########################
+    self.gamma = nn.Parameter(torch.ones(n_neurons))
+    self.beta = nn.Parameter(torch.zeros(n_neurons))
+    self.n = n_neurons
+    self.eps = eps
+    #######################
     # END OF YOUR CODE    #
     #######################
 
@@ -60,7 +63,10 @@ class CustomBatchNormAutograd(nn.Module):
     ########################
     # PUT YOUR CODE HERE  #
     #######################
-    raise NotImplementedError
+    mu = input.mean(0)
+    var = torch.pow(input.sub(mu[None, :]), 2).mean(0)
+    x = input.sub(mu[None, :]).div(torch.sqrt(var.add(self.eps)))
+    out = self.gamma.mul(x).add(self.beta)
     ########################
     # END OF YOUR CODE    #
     #######################
@@ -114,7 +120,12 @@ class CustomBatchNormManualFunction(torch.autograd.Function):
     ########################
     # PUT YOUR CODE HERE  #
     #######################
-    raise NotImplementedError
+    mu = input.mean(0)
+    var = input.var(0, unbiased=False)
+    x_hat = (input - mu[None, :]) / torch.sqrt(var + eps)[None, :]
+    out = gamma[None, :] * x_hat + beta[None, :]
+
+    # Save intermediate results.
     ########################
     # END OF YOUR CODE    #
     #######################

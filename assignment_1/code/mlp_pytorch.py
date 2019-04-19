@@ -46,6 +46,7 @@ class MLP(nn.Module):
     for idx, n in enumerate(n_hidden[1:]):
         layers += [
             nn.Linear(n_hidden[idx], n),
+            nn.Dropout(p=0.3),  # Add dropout for regularization.
             nn.ReLU()
         ]
 

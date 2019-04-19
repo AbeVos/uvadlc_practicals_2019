@@ -190,9 +190,9 @@ class SoftMaxModule(object):
     Implement backward pass of the module.
     """
 
-    ########################
-    # PUT YOUR CODE HERE  #
-    #######################
+    ######################
+    # PUT YOUR CODE HERE #
+    ######################
     dx = []
 
     for out, d in zip(self.out, dout):
@@ -216,9 +216,9 @@ class SoftMaxModule(object):
     # dx = np.tensordot(dx, dout[..., None], 1)
     dx = np.einsum('ijk,ik->ik', dx, dout)
     '''
-    ########################
-    # END OF YOUR CODE    #
-    #######################
+    ####################
+    # END OF YOUR CODE #
+    ####################
 
     return dx
 
@@ -243,7 +243,8 @@ class CrossEntropyModule(object):
     ########################
     # PUT YOUR CODE HERE  #
     #######################
-    out = - np.sum(y * np.log(x + 1e-7))
+    # out = - np.log(x[np.argmax(y, axis=1)[None, :]] + 1e-5).sum()
+    out = - np.sum(y * np.log(x + 1e-5))
     ########################
     # END OF YOUR CODE    #
     #######################
@@ -267,7 +268,7 @@ class CrossEntropyModule(object):
     ########################
     # PUT YOUR CODE HERE  #
     #######################
-    dx = - y / (x + 1e-7)
+    dx = - y / (x + 1e-5)
     ########################
     # END OF YOUR CODE    #
     #######################

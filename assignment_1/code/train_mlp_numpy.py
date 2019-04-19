@@ -9,10 +9,12 @@ from __future__ import print_function
 import argparse
 import numpy as np
 import os
-from mlp_numpy import MLP
-from modules import CrossEntropyModule
 import cifar10_utils
 import matplotlib.pyplot as plt
+
+from collections import defaultdict
+from mlp_numpy import MLP
+from modules import LinearModule, CrossEntropyModule
 
 # Default constants
 DNN_HIDDEN_UNITS_DEFAULT = '100'
@@ -47,7 +49,7 @@ def accuracy(predictions, targets):
     ########################
     # PUT YOUR CODE HERE  #
     #######################
-    raise NotImplementedError
+    accuracy = (predictions.argmax(1) == targets.argmax(1)).mean()
     ########################
     # END OF YOUR CODE    #
     #######################
@@ -77,41 +79,60 @@ def train():
     ########################
     # PUT YOUR CODE HERE  #
     #######################
-    model = MLP(32 * 32 * 3, dnn_hidden_units[0], 10)
+    model = MLP(32 * 32 * 3, dnn_hidden_units, 10)
+
+    cv_size = 10000
+    cifar10 = cifar10_utils.get_cifar10('cifar10/cifar-10-batches-py',
+                                        validation_size=cv_size)
+
     criterion = CrossEntropyModule()
-    cifar10 = cifar10_utils.get_cifar10('cifar10/cifar-10-batches-py')
 
-    FLAGS.learning_rate *= -1
+    FLAGS.learning_rate *= 1
 
-    x, y = cifar10['train'].next_batch(FLAGS.batch_size)
-    x = (x - x.min()) / (x.max() - x.min())
-
-    print(x.shape, x[0].min(), x[0].max())
-    plt.imshow(x[0].transpose(1, 2, 0))
-    plt.show()
+    log = defaultdict(list)
 
     for step in range(FLAGS.max_steps):
-        # x = (x - x.mean()) / x.std()
-        x = x.reshape(len(x), -1)
+        x, y = cifar10['train'].next_batch(FLAGS.batch_size)
+        x = x.reshape(FLAGS.batch_size, -1)
 
         h = model.forward(x)
+
+        # print(h, y)
 
         loss = criterion.forward(h, y)
         dout = criterion.backward(h, y)
         model.backward(dout)
 
-        model.layer1.params['weight'] -= FLAGS.learning_rate \
-                * model.layer1.grads['weight']
-        model.layer1.params['bias'] -= FLAGS.learning_rate \
-                * model.layer1.grads['bias']
+        # Update the parameters.
+        for layer in model.layers:
+            if not isinstance(layer, LinearModule):
+                continue
 
-        model.layer2.params['weight'] -= FLAGS.learning_rate \
-                * model.layer2.grads['weight']
-        model.layer2.params['bias'] -= FLAGS.learning_rate \
-                * model.layer2.grads['bias']
+            layer.params['weight'] -= FLAGS.learning_rate \
+                    * layer.grads['weight']
+            layer.params['bias'] -= FLAGS.learning_rate \
+                    * layer.grads['bias']
 
         if step % FLAGS.eval_freq == 0:
-            print(loss / FLAGS.batch_size)
+            log['train_loss'].append(loss / FLAGS.batch_size)
+            log['train_acc'].append(accuracy(h, y))
+
+            x, y = cifar10['validation'].next_batch(cv_size)
+            x = x.reshape(cv_size, -1)
+
+            h = model.forward(x)
+
+            loss = criterion.forward(h, y) / cv_size
+
+            log['cv_loss'].append(loss)
+            log['cv_acc'].append(accuracy(h, y))
+
+            print(
+                f"Step {step} | "
+                f"Training loss: {log['train_loss'][-1]:.5f}, "
+                f"accuracy: {100 * log['train_acc'][-1]:.1f}% | "
+                f"CV loss: {log['cv_loss'][-1]:.5f}, "
+                f"accuracy: {100 * log['cv_acc'][-1]:.1f}%")
 
     ########################
     # END OF YOUR CODE    #

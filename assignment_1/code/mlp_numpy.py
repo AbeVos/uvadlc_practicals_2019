@@ -36,10 +36,21 @@ class MLP(object):
     ########################
     # PUT YOUR CODE HERE  #
     #######################
-    self.layer1 = LinearModule(n_inputs, n_hidden)
-    self.relu1 = ReLUModule()
-    self.layer2 = LinearModule(n_hidden, n_classes)
-    self.softmax = SoftMaxModule()
+    self.layers = [
+        LinearModule(n_inputs, n_hidden[0]),
+        ReLUModule()
+    ]
+
+    for idx, n in n_hidden[1:]:
+        layers += [
+            LinearModule(n_hidden[n-1], n),
+            ReLUModule()
+        ]
+
+    self.layers += [
+        LinearModule(n_hidden[-1], n_classes),
+        SoftMaxModule()
+    ]
     ########################
     # END OF YOUR CODE    #
     #######################
@@ -61,10 +72,9 @@ class MLP(object):
     ########################
     # PUT YOUR CODE HERE  #
     #######################
-    x = self.layer1.forward(x)
-    x = self.relu1.forward(x)
-    x = self.layer2.forward(x)
-    x = self.softmax.forward(x)
+    for layer in self.layers:
+        x = layer.forward(x)
+
     out = x
     ########################
     # END OF YOUR CODE    #
@@ -86,10 +96,8 @@ class MLP(object):
     ########################
     # PUT YOUR CODE HERE  #
     #######################
-    dout = self.softmax.backward(dout)
-    dout = self.layer2.backward(dout)
-    dout = self.relu1.backward(dout)
-    dout = self.layer1.backward(dout)
+    for layer in self.layers[::-1]:
+        dout = layer.backward(dout)
     ########################
     # END OF YOUR CODE    #
     #######################
