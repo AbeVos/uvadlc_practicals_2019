@@ -23,13 +23,20 @@ class LinearModule(object):
     Also, initialize gradients with zeros.
     """
     
-    ########################
+    #######################
     # PUT YOUR CODE HERE  #
     #######################
-    self.params = {'weight': None, 'bias': None}
-    self.grads = {'weight': None, 'bias': None}
-    raise NotImplementedError
-    ########################
+    std = 0.0001
+
+    self.params = {
+        'weight': std * np.random.randn(in_features, out_features),
+        'bias': np.zeros(out_features)
+    }
+    self.grads = {
+        'weight': np.zeros_like(self.params['weight']),
+        'bias': np.zeros_like(self.params['bias'])
+    }
+    #######################
     # END OF YOUR CODE    #
     #######################
 
@@ -45,14 +52,16 @@ class LinearModule(object):
     TODO:
     Implement forward pass of the module. 
     
-    Hint: You can store intermediate variables inside the object. They can be used in backward pass computation.                                                           #
+    Hint: You can store intermediate variables inside the object.
+    They can be used in backward pass computation.
     """
     
-    ########################
+    #######################
     # PUT YOUR CODE HERE  #
     #######################
-    raise NotImplementedError
-    ########################
+    self.x = x
+    out = self.x @ self.params['weight'] + self.params['bias'][None, :]
+    #######################
     # END OF YOUR CODE    #
     #######################
 
@@ -72,11 +81,13 @@ class LinearModule(object):
     layer parameters in self.grads['weight'] and self.grads['bias']. 
     """
 
-    ########################
+    #######################
     # PUT YOUR CODE HERE  #
     #######################
-    raise NotImplementedError
-    ########################
+    self.grads['weight'] = self.x.T @ dout
+    self.grads['bias'] = dout.sum(0)  
+    dx = dout @ self.params['weight'].T
+    #######################
     # END OF YOUR CODE    #
     #######################
     
@@ -101,10 +112,11 @@ class ReLUModule(object):
     Hint: You can store intermediate variables inside the object. They can be used in backward pass computation.                                                           #
     """
 
-    ########################
+    #######################
     # PUT YOUR CODE HERE  #
     #######################
-    raise NotImplementedError
+    self.x = x
+    out = np.max([np.zeros_like(x), x], axis=0)
     ########################
     # END OF YOUR CODE    #
     #######################
@@ -124,10 +136,10 @@ class ReLUModule(object):
     Implement backward pass of the module.
     """
 
-    ########################
+    #######################
     # PUT YOUR CODE HERE  #
     #######################
-    raise NotImplementedError
+    dx = np.argmax([np.zeros_like(self.x), self.x], axis=0) * dout
     ########################
     # END OF YOUR CODE    #
     #######################    
@@ -156,7 +168,9 @@ class SoftMaxModule(object):
     ########################
     # PUT YOUR CODE HERE  #
     #######################
-    raise NotImplementedError
+    exps = np.exp(x - np.max(x, axis=1)[:, None])
+    out = exps / exps.sum(1)[:, None]
+    self.out = out
     ########################
     # END OF YOUR CODE    #
     #######################
@@ -179,7 +193,29 @@ class SoftMaxModule(object):
     ########################
     # PUT YOUR CODE HERE  #
     #######################
-    raise NotImplementedError
+    dx = []
+
+    for out, d in zip(self.out, dout):
+        out = out[:,None]
+        out = np.repeat(out, len(out), 1)
+        eye = np.eye(len(out))
+
+        dx_ = out * (eye - out.T)
+
+        dx.append(dx_ @ d)
+
+    dx = np.array(dx)
+
+    '''
+    eye = np.eye(len(self.out.T))
+    out = np.repeat(self.out[..., None], len(self.out.T), -1)
+
+    dx = out * (eye - out.transpose(0, 2, 1))
+    print(dx.shape, dout.shape)
+
+    # dx = np.tensordot(dx, dout[..., None], 1)
+    dx = np.einsum('ijk,ik->ik', dx, dout)
+    '''
     ########################
     # END OF YOUR CODE    #
     #######################
@@ -207,7 +243,7 @@ class CrossEntropyModule(object):
     ########################
     # PUT YOUR CODE HERE  #
     #######################
-    raise NotImplementedError
+    out = - np.sum(y * np.log(x + 1e-7))
     ########################
     # END OF YOUR CODE    #
     #######################
@@ -231,7 +267,7 @@ class CrossEntropyModule(object):
     ########################
     # PUT YOUR CODE HERE  #
     #######################
-    raise NotImplementedError
+    dx = - y / (x + 1e-7)
     ########################
     # END OF YOUR CODE    #
     #######################

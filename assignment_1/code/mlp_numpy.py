@@ -36,7 +36,10 @@ class MLP(object):
     ########################
     # PUT YOUR CODE HERE  #
     #######################
-    raise NotImplementedError
+    self.layer1 = LinearModule(n_inputs, n_hidden)
+    self.relu1 = ReLUModule()
+    self.layer2 = LinearModule(n_hidden, n_classes)
+    self.softmax = SoftMaxModule()
     ########################
     # END OF YOUR CODE    #
     #######################
@@ -58,7 +61,11 @@ class MLP(object):
     ########################
     # PUT YOUR CODE HERE  #
     #######################
-    raise NotImplementedError
+    x = self.layer1.forward(x)
+    x = self.relu1.forward(x)
+    x = self.layer2.forward(x)
+    x = self.softmax.forward(x)
+    out = x
     ########################
     # END OF YOUR CODE    #
     #######################
@@ -79,7 +86,10 @@ class MLP(object):
     ########################
     # PUT YOUR CODE HERE  #
     #######################
-    raise NotImplementedError
+    dout = self.softmax.backward(dout)
+    dout = self.layer2.backward(dout)
+    dout = self.relu1.backward(dout)
+    dout = self.layer1.backward(dout)
     ########################
     # END OF YOUR CODE    #
     #######################
