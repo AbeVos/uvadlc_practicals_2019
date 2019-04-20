@@ -41,16 +41,18 @@ class ConvNet(nn.Module):
             nn.Conv2d(out_channels, out_channels, 3, padding=1, stride=1),
             nn.BatchNorm2d(out_channels),
             nn.ReLU(),
-            nn.MaxPool2d(2, 2)
+            nn.MaxPool2d(3, padding=1, stride=2)
         ]
 
     layers = [
         nn.Conv2d(n_channels, 64, 3, padding=1, stride=1),
         nn.BatchNorm2d(64),
+        nn.ReLU(),
         nn.MaxPool2d(3, 2),
 
         nn.Conv2d(64, 128, 3, padding=1, stride=1),
         nn.BatchNorm2d(128),
+        nn.ReLU(),
         nn.MaxPool2d(3, 2),
 
         *conv_block(128, 256),
