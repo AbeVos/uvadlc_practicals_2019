@@ -72,13 +72,13 @@ def train():
     ########################
     # PUT YOUR CODE HERE  #
     #######################
-    model = ConvNet(3, 10).cuda()
+    model = ConvNet(3, 10)
     print(model)
 
     cv_size = 10000
     cifar10 = cifar10_utils.get_cifar10('cifar10/cifar-10-batches-py',
                                         validation_size=cv_size)
-    criterion = nn.CrossEntropyLoss().cuda()
+    criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=FLAGS.learning_rate)
 
     log = defaultdict(list)
@@ -87,8 +87,8 @@ def train():
         optimizer.zero_grad()
 
         x, y = cifar10['train'].next_batch(FLAGS.batch_size)
-        x = torch.from_numpy(x).cuda()
-        y = torch.from_numpy(y).cuda()
+        x = torch.from_numpy(x)
+        y = torch.from_numpy(y)
 
         h = model.forward(x)
 
@@ -104,8 +104,8 @@ def train():
             model.eval()
 
             x, y = cifar10['validation'].next_batch(cv_size)
-            x = torch.from_numpy(x).cuda()
-            y = torch.from_numpy(y).cuda()
+            x = torch.from_numpy(x)
+            y = torch.from_numpy(y)
 
             h = model.forward(x)
 

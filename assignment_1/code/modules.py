@@ -205,17 +205,6 @@ class SoftMaxModule(object):
         dx.append(dx_ @ d)
 
     dx = np.array(dx)
-
-    '''
-    eye = np.eye(len(self.out.T))
-    out = np.repeat(self.out[..., None], len(self.out.T), -1)
-
-    dx = out * (eye - out.transpose(0, 2, 1))
-    print(dx.shape, dout.shape)
-
-    # dx = np.tensordot(dx, dout[..., None], 1)
-    dx = np.einsum('ijk,ik->ik', dx, dout)
-    '''
     ####################
     # END OF YOUR CODE #
     ####################
