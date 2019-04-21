@@ -63,6 +63,8 @@ class CustomBatchNormAutograd(nn.Module):
     ########################
     # PUT YOUR CODE HERE  #
     #######################
+    assert len(input.shape) is 2 and input.shape[1] is self.n
+
     mu = input.mean(0)
     var = torch.pow(input.sub(mu[None, :]), 2).mean(0)
     x = input.sub(mu[None, :]).div(torch.sqrt(var.add(self.eps)))
@@ -126,6 +128,10 @@ class CustomBatchNormManualFunction(torch.autograd.Function):
     out = gamma[None, :] * x_hat + beta[None, :]
 
     # Save intermediate results.
+    ctx.save_for_backwars(mu)
+    ctx.save_for_backwars(var)
+    ctx.save_for_backwars(x_hat)
+    ctx.save_for_backwars(gamma)
     ########################
     # END OF YOUR CODE    #
     #######################
@@ -153,7 +159,12 @@ class CustomBatchNormManualFunction(torch.autograd.Function):
     ########################
     # PUT YOUR CODE HERE  #
     #######################
-    raise NotImplementedError
+    mu, var, x_hat, gamma = ctx.saved_tensors
+
+    # grad_input = 
+
+    grad_gamma = (x_hat * grad_output).sum(0)
+    grad_beta = grad_output.sum(0)
     ########################
     # END OF YOUR CODE    #
     #######################
