@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 ################################################################################
 # MIT License
 # 
@@ -24,11 +25,17 @@ from datetime import datetime
 import numpy as np
 
 import torch
+import torch.nn as nn
+import torch.optim as optim
 from torch.utils.data import DataLoader
 
-from part1.dataset import PalindromeDataset
-from part1.vanilla_rnn import VanillaRNN
-from part1.lstm import LSTM
+from dataset import PalindromeDataset
+from vanilla_rnn import VanillaRNN
+
+try:
+    from lstm import LSTM
+except Exception:
+    pass
 
 # You may want to look into tensorboardX for logging
 # from tensorboardX import SummaryWriter
@@ -43,22 +50,38 @@ def train(config):
     device = torch.device(config.device)
 
     # Initialize the model that we are going to use
-    model = None  # fixme
+    if config.model_type == 'RNN':
+        model = VanillaRNN(
+            config.input_length, config.input_dim, config.num_hidden,
+            config.num_classes, config.batch_size, device).to(device)
+    else:
+        model = LSTM(
+            config.input_length, config.input_dim, config.num_hidden,
+            config.num_classes, config.batch_size, device).to(device)
 
     # Initialize the dataset and data loader (note the +1)
     dataset = PalindromeDataset(config.input_length+1)
     data_loader = DataLoader(dataset, config.batch_size, num_workers=1)
 
     # Setup the loss and optimizer
-    criterion = None  # fixme
-    optimizer = None  # fixme
+    criterion = nn.CrossEntropyLoss().to(device)  # fixme
+    optimizer = optim.RMSprop(model.parameters(), lr=config.learning_rate)  # fixme
 
     for step, (batch_inputs, batch_targets) in enumerate(data_loader):
 
         # Only for time measurement of step through network
         t1 = time.time()
 
-        # Add more code here ...
+        # Reshape the tensors to their correct shape, cast to a device
+        # (cpu/gpu) and compute the model's output.
+        batch_inputs = batch_inputs.unsqueeze(-1).to(device)
+        batch_targets = batch_targets.to(device)
+        output = model.forward(batch_inputs)
+
+        # Compute the loss and the gradients.
+        loss = criterion(output, batch_targets)
+
+        loss.backward()
 
         ############################################################################
         # QUESTION: what happens here and why?
@@ -67,9 +90,11 @@ def train(config):
         ############################################################################
 
         # Add more code here ...
+        optimizer.step()
+        optimizer.zero_grad()
 
-        loss = np.inf   # fixme
-        accuracy = 0.0  # fixme
+        loss = loss.item()   # fixme
+        accuracy = (output.argmax(1) == batch_targets).float().mean().item()  # fixme
 
         # Just for time measurement
         t2 = time.time()
@@ -84,7 +109,10 @@ def train(config):
                     accuracy, loss
             ))
 
-        if step == config.train_steps:
+        if step == config.train_steps or f"{loss:.3f}" == "0.000":
+            with open("results.csv", 'a') as file:
+                file.write(f"{config.input_length};{accuracy};{config.model_type}\n")
+
             # If you receive a PyTorch data-loader error, check this bug report:
             # https://github.com/pytorch/pytorch/pull/9655
             break
