@@ -25,11 +25,12 @@ import argparse
 import numpy as np
 
 import torch
+import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
 
-from part2.dataset import TextDataset
-from part2.model import TextGenerationModel
+from dataset import TextDataset
+from model import TextGenerationModel
 
 ################################################################################
 
@@ -38,16 +39,23 @@ def train(config):
     # Initialize the device which to run the model on
     device = torch.device(config.device)
 
-    # Initialize the model that we are going to use
-    model = TextGenerationModel( ... )  # fixme
-
     # Initialize the dataset and data loader (note the +1)
-    dataset = TextDataset( ... )  # fixme
+    dataset = TextDataset(config.txt_file, config.seq_length)  # fixme
     data_loader = DataLoader(dataset, config.batch_size, num_workers=1)
 
+    # Initialize the model that we are going to use
+    model = TextGenerationModel(config.batch_size, config.seq_length,
+                                dataset.vocab_size, config.lstm_num_hidden,
+                                config.lstm_num_layers, device).to(device)  # fixme
+
     # Setup the loss and optimizer
-    criterion = None  # fixme
-    optimizer = None  # fixme
+    criterion = nn.CrossEntropyLoss(reduce='sum')  # fixme
+    optimizer = optim.Adam(model.parameters())  # fixme
+
+    x_onehot = torch.FloatTensor(config.seq_length, config.batch_size,
+                                 dataset.vocab_size).to(device)
+    y_onehot = torch.FloatTensor(config.seq_length, config.batch_size,
+                                 dataset.vocab_size).to(device)
 
     for step, (batch_inputs, batch_targets) in enumerate(data_loader):
 
@@ -57,6 +65,21 @@ def train(config):
         #######################################################
         # Add more code here ...
         #######################################################
+        batch_inputs = torch.stack(batch_inputs).to(device)
+        batch_targets = torch.stack(batch_targets).to(device)
+        print(dataset.convert_to_string(batch_inputs.t()[0].cpu().numpy()))
+        x_onehot.zero_()
+        x_onehot.scatter_(2, batch_inputs.unsqueeze(-1), 1)
+
+        y_onehot.zero_()
+        y_onehot.scatter_(2, batch_targets.unsqueeze(-1), 1)
+
+        y = model(x_onehot)
+
+        print(y.shape, batch_targets.shape)
+
+        loss = criterion(y.view(-1, dataset.vocab_size), batch_targets.view(-1))
+        print(loss.item())
 
         loss = np.inf   # fixme
         accuracy = 0.0  # fixme
@@ -116,6 +139,8 @@ if __name__ == "__main__":
     parser.add_argument('--summary_path', type=str, default="./summaries/", help='Output path for summaries')
     parser.add_argument('--print_every', type=int, default=5, help='How often to print training progress')
     parser.add_argument('--sample_every', type=int, default=100, help='How often to sample from the model')
+
+    parser.add_argument('--device', type=str, default='cuda:0')
 
     config = parser.parse_args()
 
