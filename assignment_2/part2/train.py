@@ -35,18 +35,35 @@ from model import TextGenerationModel
 ################################################################################
 
 def train(config):
+    def compute_accuracy(outputs, targets):
+        """
+        Compute the accuracy of the predicitions.
+        """
+        outputs = torch.argmax(outputs, -1)
+
+        return (outputs == targets).float().mean()
+
+    def sample_text(outputs):
+        # TODO: Sample from a single character.
+        outputs = torch.argmax(outputs, -1)
+
+        return [dataset.convert_to_string(x.cpu().numpy())
+                for x in outputs.t()]
+
+        return dataset.convert_to_string(outputs.t()[i].cpu().numpy())
 
     # Initialize the device which to run the model on
     device = torch.device(config.device)
 
     # Initialize the dataset and data loader (note the +1)
     dataset = TextDataset(config.txt_file, config.seq_length)  # fixme
-    data_loader = DataLoader(dataset, config.batch_size, num_workers=1)
+    data_loader = DataLoader(dataset, config.batch_size, num_workers=4)
 
     # Initialize the model that we are going to use
-    model = TextGenerationModel(config.batch_size, config.seq_length,
-                                dataset.vocab_size, config.lstm_num_hidden,
-                                config.lstm_num_layers, device).to(device)  # fixme
+    model = TextGenerationModel(
+        config.batch_size, config.seq_length, dataset.vocab_size,
+        config.lstm_num_hidden, config.lstm_num_layers, device,
+        config.dropout_keep_prob).to(device)
 
     # Setup the loss and optimizer
     criterion = nn.CrossEntropyLoss(reduce='sum')  # fixme
@@ -57,54 +74,72 @@ def train(config):
     y_onehot = torch.FloatTensor(config.seq_length, config.batch_size,
                                  dataset.vocab_size).to(device)
 
-    for step, (batch_inputs, batch_targets) in enumerate(data_loader):
+    # HACK: config.train_steps seems to be of type 'float' instead of 'int'.
+    config.train_steps = int(config.train_steps)
 
-        # Only for time measurement of step through network
-        t1 = time.time()
+    step = 0
 
-        #######################################################
-        # Add more code here ...
-        #######################################################
-        batch_inputs = torch.stack(batch_inputs).to(device)
-        batch_targets = torch.stack(batch_targets).to(device)
-        print(dataset.convert_to_string(batch_inputs.t()[0].cpu().numpy()))
-        x_onehot.zero_()
-        x_onehot.scatter_(2, batch_inputs.unsqueeze(-1), 1)
+    while step < config.train_steps:
+        for batch_inputs, batch_targets in data_loader:
 
-        y_onehot.zero_()
-        y_onehot.scatter_(2, batch_targets.unsqueeze(-1), 1)
+            # Only for time measurement of step through network
+            t1 = time.time()
 
-        y = model(x_onehot)
+            #######################################################
+            # Add more code here ...
+            #######################################################
+            optimizer.zero_grad()
 
-        print(y.shape, batch_targets.shape)
+            batch_inputs = torch.stack(batch_inputs).to(device)
+            batch_targets = torch.stack(batch_targets).to(device)
+            # print(dataset.convert_to_string(batch_inputs.t()[0].cpu().numpy()))
 
-        loss = criterion(y.view(-1, dataset.vocab_size), batch_targets.view(-1))
-        print(loss.item())
+            try:
+                x_onehot.zero_()
+                x_onehot.scatter_(2, batch_inputs.unsqueeze(-1), 1)
+            except RuntimeError:
+                continue
 
-        loss = np.inf   # fixme
-        accuracy = 0.0  # fixme
+            y_onehot.zero_()
+            y_onehot.scatter_(2, batch_targets.unsqueeze(-1), 1)
 
-        # Just for time measurement
-        t2 = time.time()
-        examples_per_second = config.batch_size/float(t2-t1)
+            y = model(x_onehot)
 
-        if step % config.print_every == 0:
+            loss = criterion(y.view(-1, dataset.vocab_size), batch_targets.view(-1))
 
-            print("[{}] Train Step {:04d}/{:04d}, Batch Size = {}, Examples/Sec = {:.2f}, "
-                  "Accuracy = {:.2f}, Loss = {:.3f}".format(
-                    datetime.now().strftime("%Y-%m-%d %H:%M"), step,
-                    config.train_steps, config.batch_size, examples_per_second,
-                    accuracy, loss
-            ))
+            loss.backward()
+            optimizer.step()
 
-        if step == config.sample_every:
-            # Generate some sentences by sampling from the model
-            pass
+            loss = loss.item()   # fixme
+            accuracy = compute_accuracy(y, batch_targets)  # fixme
 
-        if step == config.train_steps:
-            # If you receive a PyTorch data-loader error, check this bug report:
-            # https://github.com/pytorch/pytorch/pull/9655
-            break
+            # Just for time measurement
+            t2 = time.time()
+            examples_per_second = config.batch_size/float(t2-t1)
+
+            if step % config.print_every == 0:
+
+                print("[{}] Train Step {:04d}/{:04d}, Batch Size = {}, "
+                      "Examples/Sec = {:.2f}, Accuracy = {:.2f}, "
+                      "Loss = {:.3f}".format(
+                        datetime.now().strftime("%Y-%m-%d %H:%M"), step,
+                        config.train_steps, config.batch_size, examples_per_second,
+                        accuracy, loss
+                ))
+
+            if step % config.sample_every == 0:
+                # Generate some sentences by sampling from the model
+                sample = sample_text(y)
+
+                for idx in range(5):
+                    print(sample[idx])
+
+            if step == config.train_steps:
+                # If you receive a PyTorch data-loader error, check this
+                # bug report: https://github.com/pytorch/pytorch/pull/9655
+                break
+            else:
+                step += 1
 
     print('Done training.')
 
