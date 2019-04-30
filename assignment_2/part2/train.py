@@ -28,6 +28,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
+import matplotlib.pyplot as plt
 
 from dataset import TextDataset
 from model import TextGenerationModel
@@ -65,9 +66,11 @@ def train(config):
         config.lstm_num_hidden, config.lstm_num_layers, device,
         config.dropout_keep_prob).to(device)
 
+    learning_rate = config.learning_rate
+
     # Setup the loss and optimizer
     criterion = nn.CrossEntropyLoss(reduce='sum')  # fixme
-    optimizer = optim.Adam(model.parameters())  # fixme
+    optimizer = optim.Adam(model.parameters(), learning_rate)  # fixme
 
     x_onehot = torch.FloatTensor(config.seq_length, config.batch_size,
                                  dataset.vocab_size).to(device)
@@ -78,6 +81,9 @@ def train(config):
     config.train_steps = int(config.train_steps)
 
     step = 0
+    
+    loss_list = []
+    accuracy_list = []
 
     while step < config.train_steps:
         for batch_inputs, batch_targets in data_loader:
@@ -100,9 +106,6 @@ def train(config):
             except RuntimeError:
                 continue
 
-            y_onehot.zero_()
-            y_onehot.scatter_(2, batch_targets.unsqueeze(-1), 1)
-
             y = model(x_onehot)
 
             loss = criterion(y.view(-1, dataset.vocab_size), batch_targets.view(-1))
@@ -117,6 +120,20 @@ def train(config):
             t2 = time.time()
             examples_per_second = config.batch_size/float(t2-t1)
 
+            loss_list.append(loss)
+            accuracy_list.append(accuracy)
+
+            plt.figure()
+            plt.plot(loss_list)
+            plt.plot(accuracy_list)
+            plt.savefig('loss.png')
+            plt.close()
+
+            if step % config.learning_rate_step == 0:
+                learning_rate = config.learning_rate_decay * learning_rate
+                print(learning_rate)
+                optimizer = optim.Adam(model.parameters(), learning_rate)
+
             if step % config.print_every == 0:
 
                 print("[{}] Train Step {:04d}/{:04d}, Batch Size = {}, "
@@ -129,10 +146,13 @@ def train(config):
 
             if step % config.sample_every == 0:
                 # Generate some sentences by sampling from the model
-                sample = sample_text(y)
+                inputs = sample_text(x_onehot)
+                output = sample_text(y)
+                sample = sample_text(model.sample())
 
                 for idx in range(5):
-                    print(sample[idx])
+                    print(f"{inputs[idx]} | {output[idx]} | {sample[idx]}")
+
 
             if step == config.train_steps:
                 # If you receive a PyTorch data-loader error, check this

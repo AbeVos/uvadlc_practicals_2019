@@ -17,6 +17,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import torch
 import torch.nn as nn
 
 
@@ -28,16 +29,49 @@ class TextGenerationModel(nn.Module):
         super(TextGenerationModel, self).__init__()
         # Initialization here...
         self.device = device
+        self.vocabulary_size = vocabulary_size
+        self.batch_size = batch_size
+        self.seq_length = seq_length
 
         self.lstm = nn.LSTM(vocabulary_size, lstm_num_hidden, lstm_num_layers,
                             dropout=dropout_keep_prob)
+        self.relu = nn.ReLU()
 
         self.linear = nn.Linear(lstm_num_hidden, vocabulary_size)
 
     def forward(self, x):
         # Implementation here...
-        out, (h, c) = self.lstm(x)
+        out, _ = self.lstm(x)
 
         out = self.linear(out)
 
+        return out
+
+    def sample(self):
+        """
+        Generate a sample.
+        """
+        indices = torch.LongTensor(self.batch_size,1).random_(
+            0, self.vocabulary_size).to(self.device)
+
+        x = torch.zeros(self.batch_size, self.vocabulary_size).to(self.device)
+        x.scatter_(1, indices, 1)
+        x = x.unsqueeze(0)
+
+        output = [x]
+
+        x, (h, c) = self.lstm(x)
+        x = self.relu(x)
+        x = self.linear(x)
+
+        output.append(x)
+
+        for i in range(self.seq_length - 2):
+            x, (h, c) = self.lstm(x, (h, c))
+            x = self.relu(x)
+            x = self.linear(x)
+            
+            output.append(x)
+
+        out = torch.stack(output).squeeze()
         return out
