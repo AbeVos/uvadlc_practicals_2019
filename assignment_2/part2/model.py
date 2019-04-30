@@ -61,17 +61,15 @@ class TextGenerationModel(nn.Module):
         output = [x]
 
         x, (h, c) = self.lstm(x)
-        x = self.relu(x)
         x = self.linear(x)
 
         output.append(x)
 
         for i in range(self.seq_length - 2):
-            x, (h, c) = self.lstm(x, (h, c))
-            x = self.relu(x)
-            x = self.linear(x)
+            x_, (h, c) = self.lstm(x, (h, c))
+            x_ = self.linear(x_)
             
-            output.append(x)
+            output.append(x_)
 
         out = torch.stack(output).squeeze()
         return out

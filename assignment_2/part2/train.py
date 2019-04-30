@@ -48,10 +48,10 @@ def train(config):
         # TODO: Sample from a single character.
         outputs = torch.argmax(outputs, -1)
 
-        return [dataset.convert_to_string(x.cpu().numpy())
+        seqs = [dataset.convert_to_string(x.cpu().numpy()).replace('\n', ' ')
                 for x in outputs.t()]
 
-        return dataset.convert_to_string(outputs.t()[i].cpu().numpy())
+        return seqs
 
     # Initialize the device which to run the model on
     device = torch.device(config.device)
@@ -69,7 +69,7 @@ def train(config):
     learning_rate = config.learning_rate
 
     # Setup the loss and optimizer
-    criterion = nn.CrossEntropyLoss(reduce='sum')  # fixme
+    criterion = nn.CrossEntropyLoss()  # fixme
     optimizer = optim.Adam(model.parameters(), learning_rate)  # fixme
 
     x_onehot = torch.FloatTensor(config.seq_length, config.batch_size,
@@ -107,6 +107,13 @@ def train(config):
                 continue
 
             y = model(x_onehot)
+
+            '''
+            print(batch_inputs[:,0])
+            print(x_onehot.argmax(-1)[:,0])
+            print(y.argmax(-1)[:,0])
+            print()
+            '''
 
             loss = criterion(y.view(-1, dataset.vocab_size), batch_targets.view(-1))
 
