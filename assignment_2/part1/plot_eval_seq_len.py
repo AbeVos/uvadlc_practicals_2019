@@ -44,7 +44,10 @@ if __name__ == "__main__":
         means.append(np.mean(accuracies[length]))
         medians.append(np.median(accuracies[length]))
 
-    length = list(accuracies.keys())
+    length = sorted(list(accuracies.keys()))
+
+    print(length)
+    print(means)
 
     plt.fill_between(length, mins, maxs, alpha=0.5)
     plt.plot(length, means)

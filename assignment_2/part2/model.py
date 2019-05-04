@@ -19,13 +19,15 @@ from __future__ import print_function
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
+import torch.distributions as dist
 
 
 class TextGenerationModel(nn.Module):
 
     def __init__(self, batch_size, seq_length, vocabulary_size,
                  lstm_num_hidden=256, lstm_num_layers=2, device='cuda:0',
-                 dropout_keep_prob=0):
+                 dropout_keep_prob=1):
         super(TextGenerationModel, self).__init__()
         # Initialization here...
         self.device = device
@@ -35,7 +37,6 @@ class TextGenerationModel(nn.Module):
 
         self.lstm = nn.LSTM(vocabulary_size, lstm_num_hidden, lstm_num_layers,
                             dropout=dropout_keep_prob)
-        self.relu = nn.ReLU()
 
         self.linear = nn.Linear(lstm_num_hidden, vocabulary_size)
 
@@ -47,10 +48,12 @@ class TextGenerationModel(nn.Module):
 
         return out
 
-    def sample(self):
+    def sample(self, random=False, temperature=0.5):
         """
         Generate a sample.
         """
+        self.eval()
+
         indices = torch.LongTensor(self.batch_size,1).random_(
             0, self.vocabulary_size).to(self.device)
 
@@ -66,10 +69,27 @@ class TextGenerationModel(nn.Module):
         output.append(x)
 
         for i in range(self.seq_length - 2):
-            x_, (h, c) = self.lstm(x, (h, c))
-            x_ = self.linear(x_)
-            
-            output.append(x_)
+            x, (h, c) = self.lstm(x, (h, c))
+            x = self.linear(x)
+
+            if random:
+                # Apply temperature.
+                x = x / temperature
+
+                x = F.softmax(x, -1)    
+
+                distribution = dist.Categorical(x)
+                indices = distribution.sample().t()
+            else:
+                indices = x.argmax(-1).t()
+
+            # Reshape into one-hot vectors.
+            x.zero_().squeeze_()
+            x.scatter_(1, indices, 1).unsqueeze_(0)
+            output.append(x)
 
         out = torch.stack(output).squeeze()
+
+        self.train()
+
         return out

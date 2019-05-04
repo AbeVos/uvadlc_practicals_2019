@@ -35,6 +35,18 @@ from model import TextGenerationModel
 
 ################################################################################
 
+def sample_text(dataset, outputs):
+    """
+    Convert one-hot vectors to readable characters.
+    """
+    outputs = torch.argmax(outputs, -1)
+
+    seqs = [dataset.convert_to_string(x.cpu().numpy()).replace('\n', ' ')
+            for x in outputs.t()]
+
+    return seqs
+
+
 def train(config):
     def compute_accuracy(outputs, targets):
         """
@@ -43,15 +55,6 @@ def train(config):
         outputs = torch.argmax(outputs, -1)
 
         return (outputs == targets).float().mean()
-
-    def sample_text(outputs):
-        # TODO: Sample from a single character.
-        outputs = torch.argmax(outputs, -1)
-
-        seqs = [dataset.convert_to_string(x.cpu().numpy()).replace('\n', ' ')
-                for x in outputs.t()]
-
-        return seqs
 
     # Initialize the device which to run the model on
     device = torch.device(config.device)
@@ -108,13 +111,6 @@ def train(config):
 
             y = model(x_onehot)
 
-            '''
-            print(batch_inputs[:,0])
-            print(x_onehot.argmax(-1)[:,0])
-            print(y.argmax(-1)[:,0])
-            print()
-            '''
-
             loss = criterion(y.view(-1, dataset.vocab_size), batch_targets.view(-1))
 
             loss.backward()
@@ -129,12 +125,6 @@ def train(config):
 
             loss_list.append(loss)
             accuracy_list.append(accuracy)
-
-            plt.figure()
-            plt.plot(loss_list)
-            plt.plot(accuracy_list)
-            plt.savefig('loss.png')
-            plt.close()
 
             if step % config.learning_rate_step == 0:
                 learning_rate = config.learning_rate_decay * learning_rate
@@ -151,15 +141,39 @@ def train(config):
                         accuracy, loss
                 ))
 
+                # Save an image of loss and accuracy during training.
+                plt.figure()
+                plt.subplot(121)
+                plt.plot(loss_list)
+                plt.xlabel("Steps")
+                plt.ylabel("Loss")
+                plt.subplot(122)
+                plt.plot(accuracy_list)
+                plt.xlabel("Steps")
+                plt.ylabel("Accuracy")
+                plt.tight_layout()
+                plt.savefig('loss.png')
+                plt.close()
+
             if step % config.sample_every == 0:
                 # Generate some sentences by sampling from the model
-                inputs = sample_text(x_onehot)
-                output = sample_text(y)
-                sample = sample_text(model.sample())
+                inputs = sample_text(dataset, x_onehot)
+                output = sample_text(dataset, y)
+                sample = sample_text(dataset, model.sample())
 
                 for idx in range(5):
                     print(f"{inputs[idx]} | {output[idx]} | {sample[idx]}")
 
+                # Save some sampled sequences.
+                with open('samples.csv', 'a') as file:
+                    for line in sample[:5]:
+                        file.write(f"{step};'{line}'\n")
+
+                torch.save({
+                    'step': step + 1,
+                    'state_dict': model.state_dict(),
+                    'optimizer': optimizer.state_dict()
+                }, os.path.join(config.summary_path, f"model_{step}.pth.tar"))
 
             if step == config.train_steps:
                 # If you receive a PyTorch data-loader error, check this
