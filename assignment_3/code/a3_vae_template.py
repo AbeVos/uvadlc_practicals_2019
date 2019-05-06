@@ -15,7 +15,7 @@ class Encoder(nn.Module):
 
         self.linear1 = nn.Linear(28 ** 2, hidden_dim)
         self.linear_mu = nn.Linear(hidden_dim, z_dim)
-        self.linear_std = nn.Linear(hidden_dim, z_dim)
+        self.linear_logvar = nn.Linear(hidden_dim, z_dim)
 
         self.activation = nn.ReLU()
 
@@ -29,7 +29,7 @@ class Encoder(nn.Module):
         input = self.activation(self.linear1(input))
 
         mean = self.linear_mu(input)
-        std = self.activation(self.linear_std(input))
+        std = self.activation(self.linear_logvar(input))
 
         return mean, std
 
@@ -42,7 +42,8 @@ class Decoder(nn.Module):
         self.linear1 = nn.Linear(z_dim, hidden_dim)
         self.linear2 = nn.Linear(hidden_dim, 28 ** 2)
 
-        self.activation = nn.ReLU()
+        self.relu = nn.ReLU()
+        self.sigmoid = nn.Sigmoid()
 
     def forward(self, input):
         """
@@ -50,8 +51,8 @@ class Decoder(nn.Module):
 
         Returns mean with shape [batch_size, 784].
         """
-        mean = self.activation(self.linear1(input))
-        mean = self.activation(self.linear2(mean))
+        mean = self.relu(self.linear1(input))
+        mean = self.sigmoid(self.linear2(mean))
 
         return mean
 
@@ -65,33 +66,36 @@ class VAE(nn.Module):
         self.encoder = Encoder(hidden_dim, z_dim)
         self.decoder = Decoder(hidden_dim, z_dim)
 
-        self.recon_loss = nn.CrossEntropyLoss()
+        self.recon_loss = nn.BCELoss()
 
     def forward(self, input):
         """
         Given input, perform an encoding and decoding step and return the
         negative average elbo for the given batch.
         """
-        def kl_divergence(mean, std):
+        def kl_divergence(mean, logvar):
             """
             Compute the KL-divergence between the predicted mean and standard
             deviation and the standard normal distribution.
             """
-            return torch.log(1 / torch.sqrt(std)) \
-                    + (std + torch.pow(mean, 2)) \
-                    / (2 * std) \
-                    - 0.5
+            var = torch.exp(logvar)
+            std = torch.pow(var, 2)
 
-        mean, std = self.encoder(input)
+            return -0.5 * torch.sum(1 + logvar - mean.pow(2) - logvar.exp())
+
+        mean, logvar = self.encoder(input)
+        std = torch.pow(torch.exp(logvar), 2)
 
         noise = torch.randn(std.size())
         z = noise * std + mean
 
         output = self.decoder(z)
 
-        average_negative_elbo = self.recon_loss(output, input) \
-                - kl_divergence(mean, std)
-        average_negative_elbo = - average_negative_elbo.mean(0)
+        D_kl = kl_divergence(mean, logvar).mean(-1)
+        recon_loss = self.recon_loss(output, input)
+
+        average_negative_elbo = (recon_loss + D_kl).mean(0)
+
         return average_negative_elbo
 
     def sample(self, n_samples):
@@ -113,8 +117,19 @@ def epoch_iter(model, data, optimizer):
 
     Returns the average elbo for the complete epoch.
     """
-    average_epoch_elbo = None
-    raise NotImplementedError()
+    total_avg_neg_elbo = []
+
+    for idx, batch in enumerate(data):
+        batch = batch.view(len(batch), -1)
+        avg_neg_elbo = model(batch)
+
+        optimizer.zero_grad()
+        avg_neg_elbo.backward()
+        optimizer.step()
+
+        total_avg_neg_elbo.append(avg_neg_elbo.item())
+
+    average_epoch_elbo = sum(total_avg_neg_elbo) / len(total_avg_neg_elbo)
 
     return average_epoch_elbo
 
