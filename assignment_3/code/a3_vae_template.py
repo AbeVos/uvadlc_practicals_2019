@@ -104,8 +104,11 @@ class VAE(nn.Module):
         (from bernoulli) and the means for these bernoullis (as these are
         used to plot the data manifold).
         """
-        sampled_ims, im_means = None, None
-        raise NotImplementedError()
+        z = torch.randn(n_samples, self.z_dim)
+        im_means = self.decoder(z)
+
+        sampled_ims = torch.rand(*im_means.shape) < im_means
+        sampled_ims = sampled_ims.view(-1, 28, 28)
 
         return sampled_ims, im_means
 
@@ -160,10 +163,23 @@ def save_elbo_plot(train_curve, val_curve, filename):
     plt.savefig(filename)
 
 
+def save_sample_plot(samples, filename):
+    n = len(samples)
+    samples = samples.view(n, 1, 28, 28)
+    plt.figure()
+    grid = make_grid(samples, nrow=n)
+    plt.imshow(grid.permute(1, 2, 0) * 255)
+    plt.axis('off')
+    plt.savefig(filename)
+
+
 def main():
     data = bmnist()[:2]  # ignore test split
-    model = VAE(z_dim=ARGS.zdim)
+    model = VAE(hidden_dim=500, z_dim=ARGS.zdim)
     optimizer = torch.optim.Adam(model.parameters())
+
+    samples, means = model.sample(5)
+    save_sample_plot(samples, f"samples_noise.png")
 
     train_curve, val_curve = [], []
     for epoch in range(ARGS.epochs):
@@ -175,8 +191,14 @@ def main():
 
         # --------------------------------------------------------------------
         #  Add functionality to plot samples from model during training.
-        #  You can use the make_grid functioanlity that is already imported.
+        #  You can use the make_grid functionality that is already imported.
         # --------------------------------------------------------------------
+
+        samples, means = model.sample(5)
+        save_sample_plot(samples, f"samples_{epoch}.png")
+
+        if ARGS.zdim is 2:
+            save_manifold_plot(means, f"manifold_{epoch}.png")
 
     # --------------------------------------------------------------------
     #  Add functionality to plot plot the learned data manifold after
