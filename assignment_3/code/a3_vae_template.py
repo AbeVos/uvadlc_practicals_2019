@@ -53,7 +53,7 @@ class Decoder(nn.Module):
         Returns mean with shape [batch_size, 784].
         """
         mean = self.relu(self.linear1(input))
-        mean = self.sigmoid(self.linear2(mean))
+        mean = self.linear2(mean)
 
         return mean
 
@@ -69,7 +69,7 @@ class VAE(nn.Module):
         self.encoder = Encoder(hidden_dim, z_dim)
         self.decoder = Decoder(hidden_dim, z_dim)
 
-        self.recon_loss = nn.BCELoss(reduction='sum')
+        self.recon_loss = nn.BCEWithLogitsLoss(reduction='sum')
 
     def forward(self, input):
         """
@@ -98,21 +98,23 @@ class VAE(nn.Module):
 
         return average_negative_elbo
 
-    def sample(self, n_samples):
+    def sample(self, n_samples, z=None):
         """
         Sample n_samples from the model. Return both the sampled images
         (from bernoulli) and the means for these bernoullis (as these are
         used to plot the data manifold).
         """
-        z = torch.randn(n_samples, self.z_dim).to(self.device)
-        im_means = self.decoder(z)
+        if z is None:
+            z = torch.randn(n_samples, self.z_dim).to(self.device)
+
+        im_means = torch.sigmoid(self.decoder(z))
 
         sampled_ims = torch.rand(*im_means.shape).to(self.device) < im_means
-        sampled_ims = sampled_ims.view(-1, 28, 28)
+        sampled_ims = sampled_ims.view(-1, 28, 28).float()
 
         im_means = im_means.view(-1, 28, 28).detach()
 
-        return sampled_ims, im_means
+        return sampled_ims, im_means, z
 
 
 def epoch_iter(model, data, optimizer, device):
@@ -188,6 +190,8 @@ def main():
     # samples, means = model.sample(25)
     # save_sample_plot(samples, f"samples_noise.png")
 
+    z = None
+
     train_curve, val_curve = [], []
     for epoch in range(ARGS.epochs):
         elbos = run_epoch(model, data, optimizer, device)
@@ -201,8 +205,8 @@ def main():
         #  You can use the make_grid functionality that is already imported.
         # --------------------------------------------------------------------
 
-        samples, means = model.sample(25)
-        save_sample_plot(means, f"samples_{epoch:03d}.png")
+        samples, means, z = model.sample(25, z)
+        save_sample_plot(samples, f"samples_{epoch:03d}.png")
 
     # --------------------------------------------------------------------
     #  Add functionality to plot plot the learned data manifold after
