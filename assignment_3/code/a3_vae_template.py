@@ -15,7 +15,7 @@ class Encoder(nn.Module):
 
         self.linear1 = nn.Linear(28 ** 2, hidden_dim)
         self.linear_mu = nn.Linear(hidden_dim, z_dim)
-        self.linear_logvar = nn.Linear(hidden_dim, z_dim)
+        self.linear_std = nn.Linear(hidden_dim, z_dim)
 
         self.activation = nn.ReLU()
 
@@ -26,10 +26,11 @@ class Encoder(nn.Module):
         Returns mean and std with shape [batch_size, z_dim]. Make sure
         that any constraints are enforced.
         """
-        input = self.activation(self.linear1(input))
+        input = self.linear1(input)
+        input = self.activation(input)
 
         mean = self.linear_mu(input)
-        std = self.activation(self.linear_logvar(input))
+        std = self.activation(self.linear_std(input))
 
         return mean, std
 
@@ -59,8 +60,10 @@ class Decoder(nn.Module):
 
 class VAE(nn.Module):
 
-    def __init__(self, hidden_dim=500, z_dim=20):
+    def __init__(self, hidden_dim=500, z_dim=20, device='cpu'):
         super().__init__()
+
+        self.device = device
 
         self.z_dim = z_dim
         self.encoder = Encoder(hidden_dim, z_dim)
@@ -73,28 +76,27 @@ class VAE(nn.Module):
         Given input, perform an encoding and decoding step and return the
         negative average elbo for the given batch.
         """
-        def kl_divergence(mean, logvar):
+        def kl_divergence(mean, std):
             """
             Compute the KL-divergence between the predicted mean and standard
             deviation and the standard normal distribution.
             """
-            var = torch.exp(logvar)
-            std = torch.pow(var, 2)
+            return 0.5 * torch.sum(
+                std.pow(2) + mean.pow(2) - 1 - torch.log(std.pow(2)), -1)
 
-            return -0.5 * torch.sum(1 + logvar - mean.pow(2) - logvar.exp())
+        # x = input - input.mean(1)[..., None]
+        # x = x / x.std(1)[..., None]
+        mean, std = self.encoder(input)
 
-        mean, logvar = self.encoder(input)
-        std = torch.pow(torch.exp(logvar), 2)
-
-        noise = torch.randn(std.size())
+        noise = torch.randn(mean.size()).to(self.device)
         z = noise * std + mean
 
         output = self.decoder(z)
 
-        D_kl = kl_divergence(mean, logvar).mean(-1)
+        D_kl = kl_divergence(mean, std).mean()
         recon_loss = self.recon_loss(output, input)
 
-        average_negative_elbo = (recon_loss + D_kl).mean(0)
+        average_negative_elbo = recon_loss + D_kl
 
         return average_negative_elbo
 
@@ -104,16 +106,16 @@ class VAE(nn.Module):
         (from bernoulli) and the means for these bernoullis (as these are
         used to plot the data manifold).
         """
-        z = torch.randn(n_samples, self.z_dim)
+        z = torch.randn(n_samples, self.z_dim).to(self.device)
         im_means = self.decoder(z)
 
-        sampled_ims = torch.rand(*im_means.shape) < im_means
+        sampled_ims = torch.rand(*im_means.shape).to(self.device) < im_means
         sampled_ims = sampled_ims.view(-1, 28, 28)
 
-        return sampled_ims, im_means
+        return sampled_ims, im_means.detach()
 
 
-def epoch_iter(model, data, optimizer):
+def epoch_iter(model, data, optimizer, device):
     """
     Perform a single epoch for either the training or validation.
     use model.training to determine if in 'training mode' or not.
@@ -123,7 +125,11 @@ def epoch_iter(model, data, optimizer):
     total_avg_neg_elbo = []
 
     for idx, batch in enumerate(data):
-        batch = batch.view(len(batch), -1)
+        batch = batch.view(len(batch), -1).to(device)
+
+        # batch -= batch.mean()
+        # batch /= batch.std()
+
         avg_neg_elbo = model(batch)
 
         optimizer.zero_grad()
@@ -137,17 +143,17 @@ def epoch_iter(model, data, optimizer):
     return average_epoch_elbo
 
 
-def run_epoch(model, data, optimizer):
+def run_epoch(model, data, optimizer, device):
     """
     Run a train and validation epoch and return average elbo for each.
     """
     traindata, valdata = data
 
     model.train()
-    train_elbo = epoch_iter(model, traindata, optimizer)
+    train_elbo = epoch_iter(model, traindata, optimizer, device)
 
     model.eval()
-    val_elbo = epoch_iter(model, valdata, optimizer)
+    val_elbo = epoch_iter(model, valdata, optimizer, device)
 
     return train_elbo, val_elbo
 
@@ -167,23 +173,26 @@ def save_sample_plot(samples, filename):
     n = len(samples)
     samples = samples.view(n, 1, 28, 28)
     plt.figure()
-    grid = make_grid(samples, nrow=n)
-    plt.imshow(grid.permute(1, 2, 0) * 255)
+    grid = make_grid(samples, nrow=5).cpu()
+    plt.imshow(grid.permute(1, 2, 0))
     plt.axis('off')
     plt.savefig(filename)
+    plt.close()
 
 
 def main():
-    data = bmnist()[:2]  # ignore test split
-    model = VAE(hidden_dim=500, z_dim=ARGS.zdim)
-    optimizer = torch.optim.Adam(model.parameters())
+    device = torch.device(ARGS.device)
 
-    samples, means = model.sample(5)
+    data = bmnist()[:2]  # ignore test split
+    model = VAE(hidden_dim=500, z_dim=ARGS.zdim, device=device).to(device)
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+
+    samples, means = model.sample(25)
     save_sample_plot(samples, f"samples_noise.png")
 
     train_curve, val_curve = [], []
     for epoch in range(ARGS.epochs):
-        elbos = run_epoch(model, data, optimizer)
+        elbos = run_epoch(model, data, optimizer, device)
         train_elbo, val_elbo = elbos
         train_curve.append(train_elbo)
         val_curve.append(val_elbo)
@@ -194,11 +203,8 @@ def main():
         #  You can use the make_grid functionality that is already imported.
         # --------------------------------------------------------------------
 
-        samples, means = model.sample(5)
-        save_sample_plot(samples, f"samples_{epoch}.png")
-
-        if ARGS.zdim is 2:
-            save_manifold_plot(means, f"manifold_{epoch}.png")
+        samples, means = model.sample(25)
+        save_sample_plot(means, f"samples_{epoch:03d}.png")
 
     # --------------------------------------------------------------------
     #  Add functionality to plot plot the learned data manifold after
@@ -215,6 +221,7 @@ if __name__ == "__main__":
                         help='max number of epochs')
     parser.add_argument('--zdim', default=20, type=int,
                         help='dimensionality of latent space')
+    parser.add_argument('--device', default='cuda:0', type=str)
 
     ARGS = parser.parse_args()
 
