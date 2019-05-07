@@ -14,8 +14,8 @@ class Encoder(nn.Module):
         super().__init__()
 
         self.linear1 = nn.Linear(28 ** 2, hidden_dim)
-        self.linear_mu = nn.Linear(hidden_dim, z_dim)
-        self.linear_std = nn.Linear(hidden_dim, z_dim)
+        self.mean = nn.Linear(hidden_dim, z_dim)
+        self.logvar = nn.Linear(hidden_dim, z_dim)
 
         self.activation = nn.ReLU()
 
@@ -29,10 +29,10 @@ class Encoder(nn.Module):
         input = self.linear1(input)
         input = self.activation(input)
 
-        mean = self.linear_mu(input)
-        std = self.activation(self.linear_std(input))
+        mean = self.mean(input)
+        logvar = self.logvar(input)
 
-        return mean, std
+        return mean, logvar
 
 
 class Decoder(nn.Module):
@@ -69,32 +69,30 @@ class VAE(nn.Module):
         self.encoder = Encoder(hidden_dim, z_dim)
         self.decoder = Decoder(hidden_dim, z_dim)
 
-        self.recon_loss = nn.BCELoss()
+        self.recon_loss = nn.BCELoss(reduction='sum')
 
     def forward(self, input):
         """
         Given input, perform an encoding and decoding step and return the
         negative average elbo for the given batch.
         """
-        def kl_divergence(mean, std):
+        def kl_divergence(mean, logvar):
             """
             Compute the KL-divergence between the predicted mean and standard
             deviation and the standard normal distribution.
             """
             return 0.5 * torch.sum(
-                std.pow(2) + mean.pow(2) - 1 - torch.log(std.pow(2)), -1)
+                logvar.exp() + mean.pow(2) - 1 - logvar, -1)
 
-        # x = input - input.mean(1)[..., None]
-        # x = x / x.std(1)[..., None]
-        mean, std = self.encoder(input)
+        mean, logvar = self.encoder(input)
 
         noise = torch.randn(mean.size()).to(self.device)
-        z = noise * std + mean
+        z = noise * torch.exp(0.5 * logvar) + mean
 
         output = self.decoder(z)
 
-        D_kl = kl_divergence(mean, std).mean()
-        recon_loss = self.recon_loss(output, input)
+        D_kl = kl_divergence(mean, logvar).mean()
+        recon_loss = self.recon_loss(output, input) / len(input)
 
         average_negative_elbo = recon_loss + D_kl
 
@@ -112,7 +110,9 @@ class VAE(nn.Module):
         sampled_ims = torch.rand(*im_means.shape).to(self.device) < im_means
         sampled_ims = sampled_ims.view(-1, 28, 28)
 
-        return sampled_ims, im_means.detach()
+        im_means = im_means.view(-1, 28, 28).detach()
+
+        return sampled_ims, im_means
 
 
 def epoch_iter(model, data, optimizer, device):
@@ -127,14 +127,12 @@ def epoch_iter(model, data, optimizer, device):
     for idx, batch in enumerate(data):
         batch = batch.view(len(batch), -1).to(device)
 
-        # batch -= batch.mean()
-        # batch /= batch.std()
-
         avg_neg_elbo = model(batch)
 
-        optimizer.zero_grad()
-        avg_neg_elbo.backward()
-        optimizer.step()
+        if model.training:
+            optimizer.zero_grad()
+            avg_neg_elbo.backward()
+            optimizer.step()
 
         total_avg_neg_elbo.append(avg_neg_elbo.item())
 
@@ -187,8 +185,8 @@ def main():
     model = VAE(hidden_dim=500, z_dim=ARGS.zdim, device=device).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
 
-    samples, means = model.sample(25)
-    save_sample_plot(samples, f"samples_noise.png")
+    # samples, means = model.sample(25)
+    # save_sample_plot(samples, f"samples_noise.png")
 
     train_curve, val_curve = [], []
     for epoch in range(ARGS.epochs):
