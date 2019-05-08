@@ -184,7 +184,7 @@ def plot_manifold(model, filename, nrow=10):
     """
     Plot the manifold of the first two latent dimensions.
     """
-    x = torch.linspace(-1, 1, nrow)
+    x = torch.linspace(-2, 2, nrow)
     xv, yv = torch.meshgrid(x, x)
     z = torch.stack([xv, yv], 0)
     z = z.view(2, -1).t().to(model.device)
@@ -199,7 +199,7 @@ def main():
 
     data = bmnist()[:2]  # ignore test split
     model = VAE(hidden_dim=500, z_dim=ARGS.zdim, device=device).to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+    optimizer = torch.optim.Adam(model.parameters(), lr=3e-4)
 
     # samples, means, z = model.sample(25)
     # save_sample_plot(samples, f"samples_noise.png")
@@ -220,10 +220,10 @@ def main():
         # --------------------------------------------------------------------
 
         samples, means, z = model.sample(25, z)
-        save_sample_plot(means, f"samples_{epoch:03d}.png")
+        save_sample_plot(means, f"images/samples_{epoch:03d}.png")
 
         if ARGS.zdim is 2:
-            plot_manifold(model, "manifold.png")
+            plot_manifold(model, f"images/manifold_{epoch:03d}.png")
 
     # --------------------------------------------------------------------
     #  Add functionality to plot plot the learned data manifold after
@@ -231,7 +231,7 @@ def main():
     #  functionality that is already imported.
     # --------------------------------------------------------------------
 
-    save_elbo_plot(train_curve, val_curve, 'elbo.pdf')
+    save_elbo_plot(train_curve, val_curve, 'elbo.png')
 
 
 if __name__ == "__main__":
