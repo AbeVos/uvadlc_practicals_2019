@@ -168,15 +168,29 @@ def save_elbo_plot(train_curve, val_curve, filename):
     plt.savefig(filename)
 
 
-def save_sample_plot(samples, filename):
+def save_sample_plot(samples, filename, nrow=5):
     n = len(samples)
     samples = samples.view(n, 1, 28, 28)
     plt.figure()
-    grid = make_grid(samples, nrow=5).cpu()
+    grid = make_grid(samples, nrow=nrow).cpu()
     plt.imshow(grid.permute(1, 2, 0))
     plt.axis('off')
     plt.savefig(filename)
     plt.close()
+
+
+def plot_manifold(model, filename, nrow=10):
+    """
+    Plot the manifold of the first two latent dimensions.
+    """
+    x = torch.linspace(-2, 2, nrow)
+    xv, yv = torch.meshgrid(x, x)
+    z = torch.stack([xv, yv], 0)
+    z = z.view(2, -1).t().to(model.device)
+
+    samples, means, _ = model.sample(1, z)
+
+    save_sample_plot(means, filename, nrow)
 
 
 def main():
@@ -184,9 +198,9 @@ def main():
 
     data = bmnist()[:2]  # ignore test split
     model = VAE(hidden_dim=500, z_dim=ARGS.zdim, device=device).to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+    optimizer = torch.optim.Adam(model.parameters(), lr=3e-4)
 
-    # samples, means = model.sample(25)
+    # samples, means, z = model.sample(25)
     # save_sample_plot(samples, f"samples_noise.png")
 
     z = None
@@ -205,7 +219,10 @@ def main():
         # --------------------------------------------------------------------
 
         samples, means, z = model.sample(25, z)
-        save_sample_plot(samples, f"samples_{epoch:03d}.png")
+        save_sample_plot(means, f"images/samples_{epoch:03d}.png")
+
+        if ARGS.zdim is 2:
+            plot_manifold(model, f"images/manifold_{epoch:03d}.png")
 
     # --------------------------------------------------------------------
     #  Add functionality to plot plot the learned data manifold after
@@ -213,7 +230,7 @@ def main():
     #  functionality that is already imported.
     # --------------------------------------------------------------------
 
-    save_elbo_plot(train_curve, val_curve, 'elbo.pdf')
+    save_elbo_plot(train_curve, val_curve, 'elbo.png')
 
 
 if __name__ == "__main__":
