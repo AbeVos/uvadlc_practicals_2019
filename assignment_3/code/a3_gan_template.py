@@ -1,6 +1,7 @@
 import argparse
 import os
 
+import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
 import torchvision.transforms as transforms
@@ -65,6 +66,7 @@ class Discriminator(nn.Module):
             nn.Linear(28 ** 2, 512),
             nn.LeakyReLU(0.2),
             nn.Linear(512, 256),
+            nn.Dropout(),
             nn.LeakyReLU(0.2),
             nn.Linear(256, 1),
             nn.Sigmoid()
@@ -75,14 +77,23 @@ class Discriminator(nn.Module):
         return self.layers(img)
 
 
-def train(dataloader, discriminator, generator, optimizer_G, optimizer_D):
+def train(dataloader, discriminator, generator, optimizer_G, optimizer_D,
+          device):
+    sample_z = torch.randn(args.batch_size, args.latent_dim).to(device)
+
+    loss_g_plot = []
+    loss_d_plot = []
+    loss_g_mean = []
+    loss_d_mean = []
+
     for epoch in range(args.n_epochs):
         for i, (images, _) in enumerate(dataloader):
+            generator.train()
 
             # imgs.cuda()
-            images = images.view(len(images), -1)
+            images = images.view(len(images), -1).to(device)
 
-            z = torch.randn(args.batch_size, args.latent_dim)
+            z = torch.randn(args.batch_size, args.latent_dim).to(device)
 
             # Train Generator
             # ---------------
@@ -90,7 +101,7 @@ def train(dataloader, discriminator, generator, optimizer_G, optimizer_D):
 
             pred_samples = discriminator(samples)
 
-            loss_g = - torch.log(torch.sigmoid(pred_samples)).mean(0)
+            loss_g = - torch.log(pred_samples).mean(0)
 
             loss_g.backward()
             optimizer_G.step()
@@ -101,60 +112,86 @@ def train(dataloader, discriminator, generator, optimizer_G, optimizer_D):
             samples = generator(z).detach()
 
             pred_images = discriminator(images)
-
-            # TODO: Detach samples from backprop graph.
             pred_samples = discriminator(samples)
 
             loss_d = - torch.log(pred_images).mean(0) \
-                    - torch.log(1 - pred_samples).mean(0)
+                - torch.log(1 - pred_samples).mean(0)
 
             loss_d.backward()
             optimizer_D.step()
             optimizer_D.zero_grad()
 
+            loss_g_mean.append(loss_g.item())
+            loss_d_mean.append(loss_d.item())
+
             # Save Images
             # -----------
             batches_done = epoch * len(dataloader) + i
             if batches_done % args.save_interval == 0:
-                # You can use the function save_image(Tensor (shape Bx1x28x28),
-                # filename, number of rows, normalize) to save the generated
-                # images, e.g.:
-                # save_image(gen_imgs[:25],
-                #            'images/{}.png'.format(batches_done),
-                #            nrow=5, normalize=True)
-                print(i, loss_g.item(), loss_d.item())
+                generator.eval()
 
+                loss_g_mean = sum(loss_g_mean) / args.save_interval
+                loss_d_mean = sum(loss_d_mean) / args.save_interval
+
+                loss_g_plot.append(loss_g_mean)
+                loss_d_plot.append(loss_d_mean)
+
+                print(f"Epoch {epoch:03d}, batch {batches_done:06d} | "
+                      f"J(G) = {loss_g_mean:.5f}, "
+                      f"J(D) = {loss_d_mean:.5f}")
+
+                samples = generator(sample_z)
                 samples = samples.view(len(samples), 1, 28, 28)
-                save_image(samples[:25], f'images/{batches_done}.png', nrow=5,
-                           normalize=True)
+                save_image(samples[:25], f'images/{batches_done:05d}.png',
+                           nrow=5, normalize=True)
+
+                loss_g_mean = []
+                loss_d_mean = []
+
+                plt.figure()
+                plt.plot(loss_g_plot[1:], label=r"$J^{(G)}$")
+                plt.plot(loss_d_plot[1:], label=r"$J^{(D)}$")
+                plt.xlabel("Batch")
+                plt.ylabel("Loss")
+                plt.legend()
+                plt.savefig("gan_loss.png")
+                plt.close()
 
 
 def main():
     # Create output image directory
     os.makedirs('images', exist_ok=True)
 
-    # load data
+    device = torch.device(args.device)
+
+    # load data.
+    dataset = datasets.MNIST(
+        './data/mnist', train=True, download=True,
+        transform=transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize((0.5,), (0.5,))
+        ])
+    )
     dataloader = torch.utils.data.DataLoader(
-        datasets.MNIST('./data/mnist', train=True, download=True,
-                       transform=transforms.Compose([
-                           transforms.ToTensor(),
-                           #transforms.Normalize((0.5, 0.5, 0.5),
-                           #                     (0.5, 0.5, 0.5))
-                       ])),
-        batch_size=args.batch_size, shuffle=True)
+        dataset, batch_size=args.batch_size, shuffle=True)
 
     # Initialize models and optimizers
-    generator = Generator()
-    discriminator = Discriminator()
+    generator = Generator().to(device)
+    discriminator = Discriminator().to(device)
     optimizer_G = torch.optim.Adam(generator.parameters(), lr=args.lr)
     optimizer_D = torch.optim.Adam(discriminator.parameters(), lr=args.lr)
 
     # Start training
-    train(dataloader, discriminator, generator, optimizer_G, optimizer_D)
+    try:
+        train(dataloader, discriminator, generator, optimizer_G, optimizer_D,
+              device)
+    except KeyboardInterrupt:
+        # Allow for manual early stopping.
+        pass
 
     # You can save your generator here to re-use it to generate images for your
     # report, e.g.:
-    # torch.save(generator.state_dict(), "mnist_generator.pt")
+    torch.save(generator.state_dict(), "gan_generator.pth")
 
 
 if __name__ == "__main__":
@@ -169,6 +206,8 @@ if __name__ == "__main__":
                         help='dimensionality of the latent space')
     parser.add_argument('--save_interval', type=int, default=500,
                         help='save every SAVE_INTERVAL iterations')
+    parser.add_argument('--device', type=str, default='cuda:0',
+                        help="")
     args = parser.parse_args()
 
     main()
