@@ -1,5 +1,7 @@
 __pycache__/
-__pycache__/
+models/
+deliverables/
+cifar10/
 
 *.png
 *.swp
