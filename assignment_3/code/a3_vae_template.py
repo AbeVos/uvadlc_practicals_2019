@@ -93,7 +93,6 @@ class VAE(nn.Module):
 
         D_kl = kl_divergence(mean, logvar).mean()
         recon_loss = self.recon_loss(output, input) / len(input)
-
         average_negative_elbo = recon_loss + D_kl
 
         return average_negative_elbo
