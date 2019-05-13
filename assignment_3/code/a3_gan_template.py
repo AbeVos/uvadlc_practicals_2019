@@ -86,6 +86,8 @@ def train(dataloader, discriminator, generator, optimizer_G, optimizer_D,
     loss_g_mean = []
     loss_d_mean = []
 
+    batch_plot = []
+
     for epoch in range(args.n_epochs):
         for i, (images, _) in enumerate(dataloader):
             generator.train()
@@ -130,6 +132,8 @@ def train(dataloader, discriminator, generator, optimizer_G, optimizer_D,
             if batches_done % args.save_interval == 0:
                 generator.eval()
 
+                batch_plot.append(batches_done)
+
                 loss_g_mean = sum(loss_g_mean) / args.save_interval
                 loss_d_mean = sum(loss_d_mean) / args.save_interval
 
@@ -149,9 +153,9 @@ def train(dataloader, discriminator, generator, optimizer_G, optimizer_D,
                 loss_d_mean = []
 
                 plt.figure()
-                plt.plot(loss_g_plot[1:], label=r"$J^{(G)}$")
-                plt.plot(loss_d_plot[1:], label=r"$J^{(D)}$")
-                plt.xlabel("Batch")
+                plt.plot(batch_plot, loss_g_plot[1:], label=r"$J^{(G)}$")
+                plt.plot(batch_plot, loss_d_plot[1:], label=r"$J^{(D)}$")
+                plt.xlabel("Step")
                 plt.ylabel("Loss")
                 plt.legend()
                 plt.savefig("gan_loss.png")

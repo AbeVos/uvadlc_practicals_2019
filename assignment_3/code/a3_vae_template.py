@@ -44,7 +44,6 @@ class Decoder(nn.Module):
         self.linear2 = nn.Linear(hidden_dim, 28 ** 2)
 
         self.relu = nn.ReLU()
-        self.sigmoid = nn.Sigmoid()
 
     def forward(self, input):
         """
@@ -81,8 +80,7 @@ class VAE(nn.Module):
             Compute the KL-divergence between the predicted mean and standard
             deviation and the standard normal distribution.
             """
-            return 0.5 * torch.sum(
-                logvar.exp() + mean.pow(2) - 1 - logvar, -1)
+            return 0.5 * torch.sum(logvar.exp() + mean.pow(2) - 1 - logvar, -1)
 
         mean, logvar = self.encoder(input)
 
@@ -221,14 +219,14 @@ def main():
         samples, means, z = model.sample(25, z)
         save_sample_plot(means, f"images/samples_{epoch:03d}.png")
 
+        # --------------------------------------------------------------------
+        #  Add functionality to plot plot the learned data manifold after
+        #  if required (i.e., if zdim == 2). You can use the make_grid
+        #  functionality that is already imported.
+        # --------------------------------------------------------------------
+
         if ARGS.zdim is 2:
             plot_manifold(model, f"images/manifold_{epoch:03d}.png")
-
-    # --------------------------------------------------------------------
-    #  Add functionality to plot plot the learned data manifold after
-    #  if required (i.e., if zdim == 2). You can use the make_grid
-    #  functionality that is already imported.
-    # --------------------------------------------------------------------
 
     save_elbo_plot(train_curve, val_curve, 'elbo.png')
 
