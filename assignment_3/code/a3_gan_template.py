@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
 import torchvision.transforms as transforms
-from torchvision.utils import save_image
+from torchvision.utils import make_grid, save_image
 from torchvision import datasets
 
 
@@ -32,15 +32,23 @@ class Generator(nn.Module):
         self.layers = nn.Sequential(
             nn.Linear(args.latent_dim, 128),
             nn.LeakyReLU(0.2),
+            nn.Dropout(0.3),
+
             nn.Linear(128, 256),
             nn.BatchNorm1d(256),
             nn.LeakyReLU(0.2),
+            nn.Dropout(0.3),
+
             nn.Linear(256, 512),
             nn.BatchNorm1d(512),
             nn.LeakyReLU(0.2),
+            nn.Dropout(0.3),
+
             nn.Linear(512, 1024),
             nn.BatchNorm1d(1024),
             nn.LeakyReLU(0.2),
+            nn.Dropout(0.3),
+
             nn.Linear(1024, 28 ** 2),
             nn.Tanh()
         )
@@ -64,10 +72,13 @@ class Discriminator(nn.Module):
         #   Output non-linearity
         self.layers = nn.Sequential(
             nn.Linear(28 ** 2, 512),
-            nn.LeakyReLU(0.2),
+            nn.LeakyReLU(0.3),
+            nn.Dropout(0.3),
+
             nn.Linear(512, 256),
-            nn.Dropout(),
-            nn.LeakyReLU(0.2),
+            nn.LeakyReLU(0.3),
+            nn.Dropout(0.3),
+
             nn.Linear(256, 1),
             nn.Sigmoid()
         )
@@ -88,14 +99,19 @@ def train(dataloader, discriminator, generator, optimizer_G, optimizer_D,
 
     batch_plot = []
 
+    criterion = nn.BCELoss().to(device)
+
     for epoch in range(args.n_epochs):
         for i, (images, _) in enumerate(dataloader):
             generator.train()
 
+            ones = torch.ones((len(images), 1)).to(device)
+            zeros = torch.zeros((len(images), 1)).to(device)
+
             # imgs.cuda()
             images = images.view(len(images), -1).to(device)
 
-            z = torch.randn(args.batch_size, args.latent_dim).to(device)
+            z = torch.randn(len(images), args.latent_dim).to(device)
 
             # Train Generator
             # ---------------
@@ -103,7 +119,7 @@ def train(dataloader, discriminator, generator, optimizer_G, optimizer_D,
 
             pred_samples = discriminator(samples)
 
-            loss_g = - torch.log(pred_samples).mean(0)
+            loss_g = criterion(pred_samples, ones)
 
             loss_g.backward()
             optimizer_G.step()
@@ -116,8 +132,8 @@ def train(dataloader, discriminator, generator, optimizer_G, optimizer_D,
             pred_images = discriminator(images)
             pred_samples = discriminator(samples)
 
-            loss_d = - torch.log(pred_images).mean(0) \
-                - torch.log(1 - pred_samples).mean(0)
+            loss_d = criterion(pred_images, ones) \
+                    + criterion(pred_samples, zeros)
 
             loss_d.backward()
             optimizer_D.step()
@@ -146,20 +162,24 @@ def train(dataloader, discriminator, generator, optimizer_G, optimizer_D,
 
                 samples = generator(sample_z)
                 samples = samples.view(len(samples), 1, 28, 28)
-                save_image(samples[:25], f'images/{batches_done:05d}.png',
+                save_image(samples[:25], f'images/gan_{batches_done:06d}.png',
                            nrow=5, normalize=True)
 
                 loss_g_mean = []
                 loss_d_mean = []
 
                 plt.figure()
-                plt.plot(batch_plot, loss_g_plot[1:], label=r"$J^{(G)}$")
-                plt.plot(batch_plot, loss_d_plot[1:], label=r"$J^{(D)}$")
+                plt.plot(batch_plot[1:], loss_g_plot[1:], label=r"$J^{(G)}$")
+                plt.plot(batch_plot[1:], loss_d_plot[1:], label=r"$J^{(D)}$")
                 plt.xlabel("Step")
                 plt.ylabel("Loss")
                 plt.legend()
                 plt.savefig("gan_loss.png")
                 plt.close()
+
+        # You can save your generator here to re-use it to generate images for your
+        # report, e.g.:
+        torch.save(generator.state_dict(), "gan_generator.pth")
 
 
 def main():
@@ -193,9 +213,33 @@ def main():
         # Allow for manual early stopping.
         pass
 
-    # You can save your generator here to re-use it to generate images for your
-    # report, e.g.:
-    torch.save(generator.state_dict(), "gan_generator.pth")
+
+def interpolate(model, n):
+    """
+    Randomly select two random points in the latent space and generate
+    images corresponding to their interpolated coordinates.
+    """
+    def lerp(start, end, t):
+        return (1 - t) * start + t * end
+
+    start, end = torch.randn(2, args.latent_dim)
+
+    samples = []
+
+    for t in torch.linspace(0, 1, n):
+        z = lerp(start, end, t).unsqueeze(0).to(args.device)
+        samples.append(model(z))
+
+    samples = torch.stack(samples)
+    print(samples.shape)
+
+    samples = samples.view(len(samples), 1, 28, 28)
+    save_image(samples, "interpolation.png", nrow=n, normalize=True)
+
+    grid = make_grid(samples, nrow=n, normalize=True).permute((1, 2, 0))
+    plt.imshow(grid.cpu().detach().numpy())
+    plt.axis('off')
+    plt.show()
 
 
 if __name__ == "__main__":
@@ -212,6 +256,16 @@ if __name__ == "__main__":
                         help='save every SAVE_INTERVAL iterations')
     parser.add_argument('--device', type=str, default='cuda:0',
                         help="")
+    parser.add_argument('--interpolation', type=str, default=None,
+                        help="Load an existing model and Interpolate between "
+                             "two random points in the latent space.")
     args = parser.parse_args()
 
-    main()
+    if args.interpolation is None:
+        main()
+    else:
+        model = Generator().to(args.device)
+        model.load_state_dict(torch.load(args.interpolation))
+        model.eval()
+
+        interpolate(model, 9)
