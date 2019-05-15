@@ -1,3 +1,4 @@
+import os
 import argparse
 
 import torch
@@ -5,8 +6,9 @@ import torch.nn as nn
 import matplotlib.pyplot as plt
 import torch.nn.functional as F
 import numpy as np
+
+from math import pi
 from datasets.mnist import mnist
-import os
 from torchvision.utils import make_grid
 
 
@@ -15,7 +17,9 @@ def log_prior(x):
     Compute the elementwise log probability of a standard Gaussian, i.e.
     N(x | mu=0, sigma=1).
     """
-    raise NotImplementedError
+
+    logp = - pi - torch.pow(x, 2)
+
     return logp
 
 
@@ -23,7 +27,7 @@ def sample_prior(size):
     """
     Sample from a standard Gaussian.
     """
-    raise NotImplementedError
+    sample = torch.random.randn(size)
 
     if torch.cuda.is_available():
         sample = sample.cuda()
@@ -47,6 +51,7 @@ def get_mask():
 class Coupling(torch.nn.Module):
     def __init__(self, c_in, mask, n_hidden=1024):
         super().__init__()
+        self.c_in = c_in
         self.n_hidden = n_hidden
 
         # Assigns mask to self.mask and creates reference for pytorch.
@@ -56,7 +61,11 @@ class Coupling(torch.nn.Module):
         # scale variables.
         # Suggestion: Linear ReLU Linear ReLU Linear.
         self.nn = torch.nn.Sequential(
-            None
+            nn.Linear(c_in, n_hidden),
+            nn.ReLU(),
+            nn.Linear(n_hidden, n_hidden),
+            nn.ReLU(),
+            nn.Linear(n_hidden, 2 * c_in),
             )
 
         # The nn should be initialized such that the weights of the last layer
@@ -74,10 +83,18 @@ class Coupling(torch.nn.Module):
         # log_scale = tanh(h), where h is the scale-output
         # from the NN.
 
+        masked = z * self.mask
+        unmasked = z * (1 - self.mask)
+        s, t = self.nn(masked).view(len(z), self.c_in, 2).permute((2, 0, 1))
+
         if not reverse:
-            raise NotImplementedError
+            unmasked = torch.exp(s) * unmasked + t
+            z = masked + unmasked
+
+            ldj = s.sum(-1)
         else:
-            raise NotImplementedError
+            unmasked = torch.exp(-s) * (unmasked - t)
+            z = masked + unmasked
 
         return z, ldj
 
@@ -87,7 +104,7 @@ class Flow(nn.Module):
         super().__init__()
         channels, = shape
 
-        mask = get_mask()
+        mask = get_mask().to(ARGS.device)
 
         self.layers = torch.nn.ModuleList()
 
@@ -156,8 +173,9 @@ class Model(nn.Module):
         z, ldj = self.flow(z, ldj)
 
         # Compute log_pz and log_px per example
+        log_px = log_prior(z) + ldj.unsqueeze(1)
 
-        raise NotImplementedError
+        # raise NotImplementedError
 
         return log_px
 
@@ -183,7 +201,21 @@ def epoch_iter(model, data, optimizer):
     log_2 likelihood per dimension) averaged over the complete epoch.
     """
 
-    avg_bpd = None
+    avg_bpd = 0
+
+    for idx, (images, _) in enumerate(data):
+        images = images.to(ARGS.device)
+
+        log_px = model(images).sum(1)
+        log_px = torch.mean(log_px)
+
+        log_px.backward()
+        optimizer.step()
+        optimizer.zero_grad()
+
+        avg_bpd += log_px.item()
+
+    avg_bpd /= idx + 1
 
     return avg_bpd
 
@@ -217,10 +249,7 @@ def save_bpd_plot(train_curve, val_curve, filename):
 def main():
     data = mnist()[:2]  # ignore test split
 
-    model = Model(shape=[784])
-
-    if torch.cuda.is_available():
-        model = model.cuda()
+    model = Model(shape=[784]).to(ARGS.device)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
 
@@ -248,6 +277,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--epochs', default=40, type=int,
                         help='max number of epochs')
+    parser.add_argument('--device', default='cuda:0')
 
     ARGS = parser.parse_args()
 

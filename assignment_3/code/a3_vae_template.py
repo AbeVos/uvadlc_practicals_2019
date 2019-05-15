@@ -3,7 +3,7 @@ import argparse
 import torch
 import torch.nn as nn
 import matplotlib.pyplot as plt
-from torchvision.utils import make_grid
+from torchvision.utils import make_grid, save_image
 
 from datasets.bmnist import bmnist
 
@@ -169,12 +169,17 @@ def save_elbo_plot(train_curve, val_curve, filename):
 def save_sample_plot(samples, filename, nrow=5):
     n = len(samples)
     samples = samples.view(n, 1, 28, 28)
+
+    '''
     plt.figure()
     grid = make_grid(samples, nrow=nrow).cpu()
     plt.imshow(grid.permute(1, 2, 0))
     plt.axis('off')
     plt.savefig(filename)
     plt.close()
+    '''
+
+    save_image(samples, filename, nrow=5)
 
 
 def plot_manifold(model, filename, nrow=10):
@@ -196,7 +201,7 @@ def main():
 
     data = bmnist()[:2]  # ignore test split
     model = VAE(hidden_dim=500, z_dim=ARGS.zdim, device=device).to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=3e-4)
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
 
     # samples, means, z = model.sample(25)
     # save_sample_plot(samples, f"samples_noise.png")
@@ -217,7 +222,7 @@ def main():
         # --------------------------------------------------------------------
 
         samples, means, z = model.sample(25, z)
-        save_sample_plot(means, f"images/samples_{epoch:03d}.png")
+        save_sample_plot(samples, f"images/vae_{epoch:03d}.png")
 
         # --------------------------------------------------------------------
         #  Add functionality to plot plot the learned data manifold after
