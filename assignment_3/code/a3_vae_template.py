@@ -5,6 +5,7 @@ import torch.nn as nn
 import matplotlib.pyplot as plt
 from torchvision.utils import make_grid, save_image
 
+from scipy.stats import norm
 from datasets.bmnist import bmnist
 
 
@@ -179,21 +180,21 @@ def save_sample_plot(samples, filename, nrow=5):
     plt.close()
     '''
 
-    save_image(samples, filename, nrow=5)
+    save_image(samples, filename, nrow=nrow)
 
 
 def plot_manifold(model, filename, nrow=10):
     """
     Plot the manifold of the first two latent dimensions.
     """
-    x = torch.linspace(-2, 2, nrow)
+    x = torch.linspace(norm.ppf(0.01), norm.ppf(0.99), nrow)
     xv, yv = torch.meshgrid(x, x)
     z = torch.stack([xv, yv], 0)
     z = z.view(2, -1).t().to(model.device)
 
     samples, means, _ = model.sample(1, z)
 
-    save_sample_plot(means, filename, nrow)
+    save_sample_plot(means, filename, nrow=nrow)
 
 
 def main():
@@ -222,7 +223,8 @@ def main():
         # --------------------------------------------------------------------
 
         samples, means, z = model.sample(25, z)
-        save_sample_plot(samples, f"images/vae_{epoch:03d}.png")
+        save_sample_plot(samples, f"vae_samples/sample_{epoch:03d}.png")
+        save_sample_plot(means, f"vae_samples/mean_{epoch:03d}.png")
 
         # --------------------------------------------------------------------
         #  Add functionality to plot plot the learned data manifold after
@@ -231,9 +233,9 @@ def main():
         # --------------------------------------------------------------------
 
         if ARGS.zdim is 2:
-            plot_manifold(model, f"images/manifold_{epoch:03d}.png")
+            plot_manifold(model, f"vae_samples/manifold.png")
 
-    save_elbo_plot(train_curve, val_curve, 'elbo.png')
+    save_elbo_plot(train_curve, val_curve, 'elbo.pdf')
 
 
 if __name__ == "__main__":

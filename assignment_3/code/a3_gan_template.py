@@ -162,7 +162,7 @@ def train(dataloader, discriminator, generator, optimizer_G, optimizer_D,
 
                 samples = generator(sample_z)
                 samples = samples.view(len(samples), 1, 28, 28)
-                save_image(samples[:25], f'images/gan_{batches_done:06d}.png',
+                save_image(samples[:25], f'gan_samples/sample_{batches_done:06d}.png',
                            nrow=5, normalize=True)
 
                 loss_g_mean = []
@@ -174,7 +174,7 @@ def train(dataloader, discriminator, generator, optimizer_G, optimizer_D,
                 plt.xlabel("Step")
                 plt.ylabel("Loss")
                 plt.legend()
-                plt.savefig("gan_loss.png")
+                plt.savefig("gan_loss.pdf")
                 plt.close()
 
         # You can save your generator here to re-use it to generate images for your
@@ -184,7 +184,7 @@ def train(dataloader, discriminator, generator, optimizer_G, optimizer_D,
 
 def main():
     # Create output image directory
-    os.makedirs('images', exist_ok=True)
+    os.makedirs('gan_samples', exist_ok=True)
 
     device = torch.device(args.device)
 
