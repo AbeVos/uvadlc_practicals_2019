@@ -108,6 +108,9 @@ def train(dataloader, discriminator, generator, optimizer_G, optimizer_D,
             ones = torch.ones((len(images), 1)).to(device)
             zeros = torch.zeros((len(images), 1)).to(device)
 
+            ones = torch.ones((len(images), 1)).to(device)
+            zeros = torch.zeros((len(images), 1)).to(device)
+
             # imgs.cuda()
             images = images.view(len(images), -1).to(device)
 
@@ -127,13 +130,15 @@ def train(dataloader, discriminator, generator, optimizer_G, optimizer_D,
 
             # Train Discriminator
             # -------------------
-            samples = generator(z).detach()
+            # Call detach() to prevent computing the generator's
+            # gradients twice.
+            samples = samples.detach()
 
             pred_images = discriminator(images)
             pred_samples = discriminator(samples)
 
             loss_d = criterion(pred_images, ones) \
-                    + criterion(pred_samples, zeros)
+                + criterion(pred_samples, zeros)
 
             loss_d.backward()
             optimizer_D.step()
@@ -162,8 +167,9 @@ def train(dataloader, discriminator, generator, optimizer_G, optimizer_D,
 
                 samples = generator(sample_z)
                 samples = samples.view(len(samples), 1, 28, 28)
-                save_image(samples[:25], f'gan_samples/sample_{batches_done:06d}.png',
-                           nrow=5, normalize=True)
+                save_image(
+                    samples[:25], f'gan_samples/sample_{batches_done:06d}.png',
+                    nrow=5, normalize=True)
 
                 loss_g_mean = []
                 loss_d_mean = []
@@ -174,11 +180,11 @@ def train(dataloader, discriminator, generator, optimizer_G, optimizer_D,
                 plt.xlabel("Step")
                 plt.ylabel("Loss")
                 plt.legend()
-                plt.savefig("gan_loss.pdf")
+                plt.savefig("gan_loss.png")
                 plt.close()
 
-        # You can save your generator here to re-use it to generate images for your
-        # report, e.g.:
+        # You can save your generator here to re-use it to generate images for
+        # your report, e.g.:
         torch.save(generator.state_dict(), "gan_generator.pth")
 
 

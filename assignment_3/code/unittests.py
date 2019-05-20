@@ -1,3 +1,4 @@
+import argparse
 import unittest
 import numpy as np
 import torch
@@ -18,7 +19,7 @@ def f_layer(layer, x, logdet):
         z, logdet = layer(x, logdet, reverse=False)
         recon, logdet = layer(z, logdet, reverse=True)
 
-    x, recon, logdet = x.numpy(), recon.numpy(), logdet.numpy()
+    x, recon, logdet = x.cpu().numpy(), recon.cpu().numpy(), logdet.cpu().numpy()
 
     return x, recon, logdet
 
@@ -32,10 +33,10 @@ class TestLayers(unittest.TestCase):
         for test_num in range(10):
             N = np.random.choice(range(1, 20))
             C = 784
-            x = torch.randn(N, C)
-            logdet = torch.zeros(N)
+            x = torch.randn(N, C).to(args.device)
+            logdet = torch.zeros(N).to(args.device)
 
-            layer = Flow([C], n_flows=2)
+            layer = Flow([C], n_flows=2).to(args.device)
 
             x, recon, logdet = f_layer(layer, x, logdet)
 
@@ -49,10 +50,10 @@ class TestLayers(unittest.TestCase):
         for test_num in range(10):
             N = np.random.choice(range(1, 20))
             C = 784
-            x = torch.randn(N, C)
-            logdet = torch.zeros(N)
+            x = torch.randn(N, C).to(args.device)
+            logdet = torch.zeros(N).to(args.device)
 
-            layer = Coupling(c_in=C, mask=get_mask())
+            layer = Coupling(c_in=C, mask=get_mask()).to(args.device)
 
             x, recon, logdet = f_layer(layer, x, logdet)
 
@@ -61,5 +62,9 @@ class TestLayers(unittest.TestCase):
 
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--device', default='cuda:0')
+    args = parser.parse_args()
+
     suite = unittest.TestLoader().loadTestsFromTestCase(TestLayers)
     unittest.TextTestRunner(verbosity=2).run(suite)

@@ -7,9 +7,9 @@ import matplotlib.pyplot as plt
 import torch.nn.functional as F
 import numpy as np
 
-from math import pi
+from math import pi, log
 from datasets.mnist import mnist
-from torchvision.utils import make_grid
+from torchvision.utils import make_grid, save_image
 
 
 def log_prior(x):
@@ -18,7 +18,7 @@ def log_prior(x):
     N(x | mu=0, sigma=1).
     """
 
-    logp = - pi - torch.pow(x, 2)
+    logp = - 0.5 * (log(2 * pi) + x ** 2)
 
     return logp
 
@@ -27,7 +27,7 @@ def sample_prior(size):
     """
     Sample from a standard Gaussian.
     """
-    sample = torch.random.randn(size)
+    sample = torch.randn(size)
 
     if torch.cuda.is_available():
         sample = sample.cuda()
@@ -35,7 +35,7 @@ def sample_prior(size):
     return sample
 
 
-def get_mask():
+def get_mask(device='cuda:0'):
     mask = np.zeros((28, 28), dtype='float32')
     for i in range(28):
         for j in range(28):
@@ -43,7 +43,7 @@ def get_mask():
                 mask[i, j] = 1
 
     mask = mask.reshape(1, 28*28)
-    mask = torch.from_numpy(mask)
+    mask = torch.from_numpy(mask).to(device)
 
     return mask
 
@@ -85,26 +85,28 @@ class Coupling(torch.nn.Module):
 
         masked = z * self.mask
         unmasked = z * (1 - self.mask)
-        s, t = self.nn(masked).view(len(z), self.c_in, 2).permute((2, 0, 1))
+
+        s, t = torch.chunk(self.nn(masked), 2, -1)
+        log_scale = torch.tanh(s)
 
         if not reverse:
-            unmasked = torch.exp(s) * unmasked + t
-            z = masked + unmasked
+            z = torch.exp(log_scale) * masked + t
+            z = masked + unmasked * z
 
-            ldj = s.sum(-1)
+            ldj += s.sum(-1)
         else:
-            unmasked = torch.exp(-s) * (unmasked - t)
-            z = masked + unmasked
+            z = torch.exp(-log_scale) * (masked - t)
+            z = masked + unmasked * z
 
         return z, ldj
 
 
 class Flow(nn.Module):
-    def __init__(self, shape, n_flows=4):
+    def __init__(self, shape, n_flows=4, device='cuda:0'):
         super().__init__()
         channels, = shape
 
-        mask = get_mask().to(ARGS.device)
+        mask = get_mask().to(device)
 
         self.layers = torch.nn.ModuleList()
 
@@ -187,7 +189,10 @@ class Model(nn.Module):
         z = sample_prior((n_samples,) + self.flow.z_shape)
         ldj = torch.zeros(z.size(0), device=z.device)
 
-        raise NotImplementedError
+        z, ldj = self.flow(z, ldj, reverse=True)
+        z, ldj = self.logit_normalize(z, ldj, reverse=True)
+
+        # raise NotImplementedError
 
         return z
 
@@ -206,12 +211,13 @@ def epoch_iter(model, data, optimizer):
     for idx, (images, _) in enumerate(data):
         images = images.to(ARGS.device)
 
-        log_px = model(images).sum(1)
-        log_px = torch.mean(log_px)
+        log_px = model(images)
+        log_px = -torch.mean(log_px)
 
-        log_px.backward()
-        optimizer.step()
-        optimizer.zero_grad()
+        if model.training:
+            log_px.backward()
+            optimizer.step()
+            optimizer.zero_grad()
 
         avg_bpd += log_px.item()
 
@@ -257,10 +263,11 @@ def main():
 
     train_curve, val_curve = [], []
     for epoch in range(ARGS.epochs):
-        bpds = run_epoch(model, data, optimizer)
-        train_bpd, val_bpd = bpds
+        train_bpd, val_bpd = run_epoch(model, data, optimizer)
+
         train_curve.append(train_bpd)
         val_curve.append(val_bpd)
+
         print("[Epoch {epoch}] train bpd: {train_bpd} val_bpd: {val_bpd}".format(
             epoch=epoch, train_bpd=train_bpd, val_bpd=val_bpd))
 
@@ -269,8 +276,12 @@ def main():
         #  You can use the make_grid functionality that is already imported.
         #  Save grid to images_nfs/
         # --------------------------------------------------------------------
+        sample = model.sample(64).view(-1, 1, 28, 28)
 
-    save_bpd_plot(train_curve, val_curve, 'nfs_bpd.pdf')
+        save_image(sample, f"images_nfs/sample_{epoch:03d}.png", nrow=8,
+                   normalize=True)
+
+        save_bpd_plot(train_curve, val_curve, 'nfs_bpd.png')
 
 
 if __name__ == "__main__":
