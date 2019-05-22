@@ -4,12 +4,12 @@ import argparse
 import torch
 import torch.nn as nn
 import matplotlib.pyplot as plt
-import torch.nn.functional as F
 import numpy as np
 
 from math import pi, log
 from datasets.mnist import mnist
-from torchvision.utils import make_grid, save_image
+from torch.nn.utils import clip_grad_norm_
+from torchvision.utils import save_image
 
 
 def log_prior(x):
@@ -17,7 +17,6 @@ def log_prior(x):
     Compute the elementwise log probability of a standard Gaussian, i.e.
     N(x | mu=0, sigma=1).
     """
-
     logp = - 0.5 * (log(2 * pi) + x ** 2)
 
     return logp
@@ -83,20 +82,16 @@ class Coupling(torch.nn.Module):
         # log_scale = tanh(h), where h is the scale-output
         # from the NN.
 
-        masked = z * self.mask
-        unmasked = z * (1 - self.mask)
-
-        s, t = torch.chunk(self.nn(masked), 2, -1)
-        log_scale = torch.tanh(s)
+        s, t = self.nn(z * self.mask).chunk(2, -1)
+        log_scale = torch.tanh(s) * (1 - self.mask)
+        t = t * (1 - self.mask)
 
         if not reverse:
-            z = torch.exp(log_scale) * masked + t
-            z = masked + unmasked * z
+            z = log_scale.exp() * (z + t)
 
-            ldj += s.sum(-1)
+            ldj += (log_scale).sum(-1)
         else:
-            z = torch.exp(-log_scale) * (masked - t)
-            z = masked + unmasked * z
+            z = log_scale.mul(-1).exp() * z - t
 
         return z, ldj
 
@@ -174,10 +169,8 @@ class Model(nn.Module):
 
         z, ldj = self.flow(z, ldj)
 
-        # Compute log_pz and log_px per example
-        log_px = log_prior(z) + ldj.unsqueeze(1)
-
-        # raise NotImplementedError
+        # Compute log_pz and log_px per example.
+        log_px = log_prior(z).sum(1) + ldj
 
         return log_px
 
@@ -187,12 +180,10 @@ class Model(nn.Module):
         Then invert the flow and invert the logit_normalize.
         """
         z = sample_prior((n_samples,) + self.flow.z_shape)
-        ldj = torch.zeros(z.size(0), device=z.device)
+        ldj = torch.zeros(n_samples, device=z.device)
 
         z, ldj = self.flow(z, ldj, reverse=True)
         z, ldj = self.logit_normalize(z, ldj, reverse=True)
-
-        # raise NotImplementedError
 
         return z
 
@@ -211,15 +202,19 @@ def epoch_iter(model, data, optimizer):
     for idx, (images, _) in enumerate(data):
         images = images.to(ARGS.device)
 
-        log_px = model(images)
-        log_px = -torch.mean(log_px)
+        log_px = - model(images).mean() / 784
 
         if model.training:
             log_px.backward()
+
+            # Clip the gradients.
+            clip_grad_norm_(model.flow.layers.parameters(), 1)
+
             optimizer.step()
             optimizer.zero_grad()
 
-        avg_bpd += log_px.item()
+        # Aggregate all log_px for this epoch and transform it to log2.
+        avg_bpd += log_px.item() / log(2)
 
     avg_bpd /= idx + 1
 
@@ -250,6 +245,7 @@ def save_bpd_plot(train_curve, val_curve, filename):
     plt.ylabel('bpd')
     plt.tight_layout()
     plt.savefig(filename)
+    plt.close()
 
 
 def main():
@@ -268,8 +264,10 @@ def main():
         train_curve.append(train_bpd)
         val_curve.append(val_bpd)
 
-        print("[Epoch {epoch}] train bpd: {train_bpd} val_bpd: {val_bpd}".format(
-            epoch=epoch, train_bpd=train_bpd, val_bpd=val_bpd))
+        print(
+            "[Epoch {epoch}] train bpd: {train_bpd} val_bpd: {val_bpd}".format(
+                epoch=epoch, train_bpd=train_bpd, val_bpd=val_bpd)
+        )
 
         # --------------------------------------------------------------------
         #  Add functionality to plot samples from model during training.
@@ -282,6 +280,8 @@ def main():
                    normalize=True)
 
         save_bpd_plot(train_curve, val_curve, 'nfs_bpd.png')
+
+    save_bpd_plot(train_curve, val_curve, 'nfs_bpd.pdf')
 
 
 if __name__ == "__main__":
